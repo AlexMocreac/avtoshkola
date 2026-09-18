@@ -18,7 +18,9 @@ function e(mixed $value): string
 function base_path(): string
 {
     $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '/index.php');
-    $base = rtrim(dirname($script), '/.');
+    // dirname() returns a backslash for root-level paths on Windows. Leaving it
+    // in a URL produces `\/login`, which browsers interpret as host `login`.
+    $base = rtrim(str_replace('\\', '/', dirname($script)), '/.');
     return $base === '' ? '' : $base;
 }
 
