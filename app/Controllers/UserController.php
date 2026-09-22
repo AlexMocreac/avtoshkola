@@ -16,26 +16,48 @@ final class UserController
 {
     public function index(): void
     {
-        $admin = Auth::requireAdmin();
+        Response::redirect('/students');
+    }
+
+    public function students(): void
+    {
+        $this->list('students');
+    }
+
+    public function staff(): void
+    {
+        $this->list('staff');
+    }
+
+    private function list(string $group): void
+    {
+        $manager = Auth::requireUserManager();
         $filters = [
             'search' => trim((string) ($_GET['search'] ?? '')),
             'role' => (string) ($_GET['role'] ?? ''),
             'status' => (string) ($_GET['status'] ?? ''),
+            'group' => $group,
         ];
         View::render('users/index', [
-            'pageTitle' => 'Пользователи',
+            'pageTitle' => $group === 'students' ? 'Курсанты' : 'Сотрудники',
             'pageEyebrow' => 'Управление доступом',
-            'currentUser' => $admin,
+            'currentUser' => $manager,
             'users' => User::all($filters),
             'filters' => $filters,
-            'roles' => User::ROLES,
+            'roles' => $group === 'students' ? [User::ROLE_STUDENT => User::ROLES[User::ROLE_STUDENT]] : array_diff_key(User::ROLES, [User::ROLE_STUDENT => true]),
+            'assignableRoles' => $group === 'students' ? [User::ROLE_STUDENT => User::ROLES[User::ROLE_STUDENT]] : array_diff_key(User::ROLES, [User::ROLE_STUDENT => true]),
+            'group' => $group,
+            'canEditGroup' => $group === 'students' || !$manager->isAdmin(),
         ]);
     }
 
     public function create(): void
     {
-        $admin = Auth::requireAdmin();
+        $admin = Auth::requireUserManager();
         Csrf::enforce(true);
+        if (!$admin->canAssignRole((string) ($_POST['role'] ?? ''))) {
+            Response::json(['ok' => false, 'message' => 'Недостаточно прав для назначения этой роли.'], 403);
+        }
         $errors = Validator::user($_POST, true);
         if ($errors) {
             Response::json(['ok' => false, 'message' => 'Проверьте заполнение полей.', 'errors' => $errors], 422);
@@ -55,23 +77,27 @@ final class UserController
 
     public function update(string $id): void
     {
-        $admin = Auth::requireAdmin();
+        $admin = Auth::requireUserManager();
         Csrf::enforce(true);
         $target = User::find((int) $id);
         if (!$target) {
             Response::json(['ok' => false, 'message' => 'Пользователь не найден.'], 404);
+        }
+        $this->authorizeTarget($admin, $target);
+        if (!$admin->canAssignRole((string) ($_POST['role'] ?? ''))) {
+            Response::json(['ok' => false, 'message' => 'Недостаточно прав для назначения этой роли.'], 403);
         }
 
         $errors = Validator::user($_POST, false);
         if ($errors) {
             Response::json(['ok' => false, 'message' => 'Проверьте заполнение полей.', 'errors' => $errors], 422);
         }
-        if ($target->role === User::ROLE_ADMIN && ($_POST['role'] ?? '') !== User::ROLE_ADMIN && User::countActiveAdmins() <= 1) {
-            Response::json(['ok' => false, 'message' => 'Нельзя изменить роль единственного активного администратора.'], 422);
-        }
-
         try {
-            $user = User::updateUser($target->id, $_POST, $admin->id);
+            $data = $_POST;
+            $newMonths = $data['role'] === User::ROLE_STUDENT && ($data['access_months'] ?? '') !== '' ? (int) $data['access_months'] : null;
+            $data['access_months_changed'] = $target->role !== $data['role'] || $target->accessMonths !== $newMonths
+                || ($data['restart_access'] ?? '') === '1';
+            $user = User::updateUser($target->id, $data, $admin->id);
             Response::json(['ok' => true, 'message' => 'Данные пользователя обновлены.', 'user' => $this->serialize($user)]);
         } catch (PDOException $exception) {
             $this->uniqueError($exception);
@@ -80,12 +106,13 @@ final class UserController
 
     public function status(string $id): void
     {
-        $admin = Auth::requireAdmin();
+        $admin = Auth::requireUserManager();
         Csrf::enforce(true);
         $target = User::find((int) $id);
         if (!$target) {
             Response::json(['ok' => false, 'message' => 'Пользователь не найден.'], 404);
         }
+        $this->authorizeTarget($admin, $target);
         if ($target->id === $admin->id) {
             Response::json(['ok' => false, 'message' => 'Нельзя заблокировать собственную учётную запись.'], 422);
         }
@@ -94,22 +121,22 @@ final class UserController
         if (!in_array($status, [User::STATUS_ACTIVE, User::STATUS_BLOCKED], true)) {
             Response::json(['ok' => false, 'message' => 'Некорректный статус.'], 422);
         }
-        if ($target->role === User::ROLE_ADMIN && $status === User::STATUS_BLOCKED && User::countActiveAdmins() <= 1) {
-            Response::json(['ok' => false, 'message' => 'Нельзя заблокировать единственного активного администратора.'], 422);
+        if ($status === User::STATUS_ACTIVE && $target->accessExpired()) {
+            Response::json(['ok' => false, 'message' => 'Срок доступа курсанта истёк. Сначала измените срок обучения.'], 422);
         }
-
         User::setStatus($target->id, $status, $admin->id);
         Response::json(['ok' => true, 'message' => $status === User::STATUS_BLOCKED ? 'Доступ пользователя заблокирован.' : 'Доступ пользователя восстановлен.']);
     }
 
     public function resetPassword(string $id): void
     {
-        $admin = Auth::requireAdmin();
+        $admin = Auth::requireUserManager();
         Csrf::enforce(true);
         $target = User::find((int) $id);
         if (!$target) {
             Response::json(['ok' => false, 'message' => 'Пользователь не найден.'], 404);
         }
+        $this->authorizeTarget($admin, $target);
 
         $password = $this->temporaryPassword();
         User::resetPassword($target->id, $password, $admin->id);
@@ -123,19 +150,16 @@ final class UserController
 
     public function delete(string $id): void
     {
-        $admin = Auth::requireAdmin();
+        $admin = Auth::requireUserManager();
         Csrf::enforce(true);
         $target = User::find((int) $id);
         if (!$target) {
             Response::json(['ok' => false, 'message' => 'Пользователь не найден.'], 404);
         }
+        $this->authorizeTarget($admin, $target);
         if ($target->id === $admin->id) {
             Response::json(['ok' => false, 'message' => 'Нельзя удалить собственную учётную запись.'], 422);
         }
-        if ($target->role === User::ROLE_ADMIN && User::countActiveAdmins() <= 1) {
-            Response::json(['ok' => false, 'message' => 'Нельзя удалить единственного активного администратора.'], 422);
-        }
-
         User::softDelete($target->id, $admin->id);
         Response::json(['ok' => true, 'message' => 'Пользователь удалён.']);
     }
@@ -152,6 +176,8 @@ final class UserController
             'middle_name' => $user->middleName,
             'role' => $user->role,
             'role_title' => $user->roleTitle(),
+            'access_months' => $user->accessMonths,
+            'access_expires_at' => $user->accessExpiresAt,
             'status' => $user->status,
             'full_name' => $user->fullName(),
         ];
@@ -169,6 +195,13 @@ final class UserController
             [$characters[$i], $characters[$swap]] = [$characters[$swap], $characters[$i]];
         }
         return implode('', $characters);
+    }
+
+    private function authorizeTarget(User $actor, User $target): void
+    {
+        if (!$actor->canManage($target)) {
+            Response::json(['ok' => false, 'message' => 'Недостаточно прав для управления этим пользователем.'], 403);
+        }
     }
 
     private function uniqueError(PDOException $exception): never

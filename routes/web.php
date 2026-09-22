@@ -22,6 +22,8 @@ $router->post('/change-password', [AuthController::class, 'changePassword']);
 $router->get('/dashboard', [DashboardController::class, 'index']);
 
 $router->get('/users', [UserController::class, 'index']);
+$router->get('/students', [UserController::class, 'students']);
+$router->get('/staff', [UserController::class, 'staff']);
 $router->post('/users', [UserController::class, 'create']);
 $router->post('/users/{id}/update', [UserController::class, 'update']);
 $router->post('/users/{id}/status', [UserController::class, 'status']);
@@ -33,4 +35,3 @@ $router->post('/chat/conversations', [ChatController::class, 'createConversation
 $router->get('/chat/messages', [ChatController::class, 'messages']);
 $router->post('/chat/messages', [ChatController::class, 'send']);
 $router->get('/chat/unread', [ChatController::class, 'unread']);
-

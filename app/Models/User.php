@@ -37,6 +37,8 @@ final class User
     public string $lastName;
     public ?string $middleName;
     public string $role;
+    public ?int $accessMonths;
+    public ?string $accessExpiresAt;
     public string $status;
     public string $passwordHash;
     public bool $mustChangePassword;
@@ -55,6 +57,8 @@ final class User
         $user->lastName = (string) $row['last_name'];
         $user->middleName = $row['middle_name'] !== null ? (string) $row['middle_name'] : null;
         $user->role = (string) $row['role'];
+        $user->accessMonths = $row['access_months'] !== null ? (int) $row['access_months'] : null;
+        $user->accessExpiresAt = $row['access_expires_at'] !== null ? (string) $row['access_expires_at'] : null;
         $user->status = (string) $row['status'];
         $user->passwordHash = (string) ($row['password_hash'] ?? '');
         $user->mustChangePassword = (bool) $row['must_change_password'];
@@ -102,6 +106,10 @@ final class User
             $where[] = 'status = :status';
             $params['status'] = (string) $filters['status'];
         }
+        if (isset($filters['group'])) {
+            $where[] = $filters['group'] === 'students' ? 'role = :group_role' : 'role <> :group_role';
+            $params['group_role'] = self::ROLE_STUDENT;
+        }
 
         $stmt = Database::connection()->prepare(
             'SELECT * FROM users WHERE ' . implode(' AND ', $where) . ' ORDER BY created_at DESC, id DESC'
@@ -113,8 +121,9 @@ final class User
     public static function create(array $data, int $createdBy): self
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO users (login, email, phone, first_name, last_name, middle_name, role, status, password_hash, must_change_password, created_by, updated_by)
-             VALUES (:login, :email, :phone, :first_name, :last_name, :middle_name, :role, :status, :password_hash, 1, :created_by, :updated_by)'
+            'INSERT INTO users (login, email, phone, first_name, last_name, middle_name, role, access_months, access_expires_at, status, password_hash, must_change_password, created_by, updated_by)
+             VALUES (:login, :email, :phone, :first_name, :last_name, :middle_name, :role, :access_months,
+             IF(:expiry_months IS NULL, NULL, DATE_ADD(NOW(), INTERVAL :expiry_interval MONTH)), :status, :password_hash, 1, :created_by, :updated_by)'
         );
         $stmt->execute([
             'login' => trim((string) $data['login']),
@@ -124,6 +133,9 @@ final class User
             'last_name' => trim((string) $data['last_name']),
             'middle_name' => self::nullable($data['middle_name'] ?? null),
             'role' => (string) $data['role'],
+            'access_months' => self::accessMonths($data),
+            'expiry_months' => self::accessMonths($data),
+            'expiry_interval' => self::accessMonths($data),
             'status' => self::STATUS_ACTIVE,
             'password_hash' => password_hash((string) $data['password'], PASSWORD_DEFAULT),
             'created_by' => $createdBy,
@@ -136,7 +148,12 @@ final class User
     {
         $stmt = Database::connection()->prepare(
             'UPDATE users SET login = :login, email = :email, phone = :phone, first_name = :first_name,
-             last_name = :last_name, middle_name = :middle_name, role = :role, updated_by = :updated_by
+             last_name = :last_name, middle_name = :middle_name, role = :role,
+             access_months = :access_months,
+             access_expires_at = CASE WHEN :expiry_changed = 1 THEN
+                 IF(:expiry_months IS NULL, NULL, DATE_ADD(NOW(), INTERVAL :expiry_interval MONTH))
+                 ELSE access_expires_at END,
+             updated_by = :updated_by
              WHERE id = :id AND status <> :deleted'
         );
         $stmt->execute([
@@ -147,6 +164,10 @@ final class User
             'last_name' => trim((string) $data['last_name']),
             'middle_name' => self::nullable($data['middle_name'] ?? null),
             'role' => (string) $data['role'],
+            'access_months' => self::accessMonths($data),
+            'expiry_changed' => (int) ($data['access_months_changed'] ?? 0),
+            'expiry_months' => self::accessMonths($data),
+            'expiry_interval' => self::accessMonths($data),
             'updated_by' => $updatedBy,
             'id' => $id,
             'deleted' => self::STATUS_DELETED,
@@ -160,6 +181,40 @@ final class User
             'UPDATE users SET status = :status, updated_by = :updated_by WHERE id = :id AND status <> :deleted'
         );
         return $stmt->execute(['status' => $status, 'updated_by' => $updatedBy, 'id' => $id, 'deleted' => self::STATUS_DELETED]);
+    }
+
+    public static function blockExpiredStudents(): void
+    {
+        Database::connection()->exec(
+            "UPDATE users SET status = 'blocked' WHERE role = 'student' AND status = 'active'
+             AND access_expires_at IS NOT NULL AND access_expires_at <= NOW()"
+        );
+    }
+
+    public function accessExpired(): bool
+    {
+        if (!$this->isStudent() || $this->accessExpiresAt === null) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('SELECT access_expires_at <= NOW() FROM users WHERE id = :id');
+        $stmt->execute(['id' => $this->id]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public function canManageUsers(): bool
+    {
+        return in_array($this->role, [self::ROLE_DIRECTOR, self::ROLE_DEPUTY_DIRECTOR, self::ROLE_ADMIN], true);
+    }
+
+    public function canManage(self $target): bool
+    {
+        return $this->canManageUsers() && ($this->role !== self::ROLE_ADMIN || $target->isStudent());
+    }
+
+    public function canAssignRole(string $role): bool
+    {
+        return $this->canManageUsers() && array_key_exists($role, self::ROLES)
+            && ($this->role !== self::ROLE_ADMIN || $role === self::ROLE_STUDENT);
     }
 
     public static function softDelete(int $id, int $updatedBy): bool
@@ -219,18 +274,9 @@ final class User
     public static function stats(): array
     {
         $pdo = Database::connection();
-        $total = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status <> 'deleted'")->fetchColumn();
         $students = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status = 'active' AND role = 'student'")->fetchColumn();
         $staff = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status = 'active' AND role <> 'student'")->fetchColumn();
-        $blocked = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status = 'blocked'")->fetchColumn();
-        return compact('total', 'students', 'staff', 'blocked');
-    }
-
-    public static function countActiveAdmins(): int
-    {
-        return (int) Database::connection()->query(
-            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'"
-        )->fetchColumn();
+        return compact('students', 'staff');
     }
 
     public static function chatContacts(self $current): array
@@ -274,5 +320,11 @@ final class User
     {
         $value = trim((string) $value);
         return $value === '' ? null : $value;
+    }
+
+    private static function accessMonths(array $data): ?int
+    {
+        return ($data['role'] ?? null) === self::ROLE_STUDENT && ($data['access_months'] ?? '') !== ''
+            ? (int) $data['access_months'] : null;
     }
 }

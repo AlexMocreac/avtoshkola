@@ -15,31 +15,23 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
     </div>
 </section>
 
-<?php if ($currentUser->isAdmin()): ?>
-    <section class="metric-grid stagger-group">
-        <article class="metric-card reveal">
-            <div class="metric-card__top"><span class="metric-icon metric-icon--orange"><?= icon('users') ?></span><span class="trend trend--up">Все роли</span></div>
-            <strong><?= $stats['total'] ?></strong><p>Пользователей</p>
-        </article>
+<?php if ($currentUser->canManageUsers()): ?>
+    <section class="metric-grid metric-grid--two stagger-group">
         <article class="metric-card reveal">
             <div class="metric-card__top"><span class="metric-icon metric-icon--blue"><?= icon('user') ?></span><span class="trend">Активные</span></div>
-            <strong><?= $stats['students'] ?></strong><p>Курсантов</p>
+            <strong><?= $stats['students'] ?></strong><p><a href="<?= e(url('/students')) ?>">Курсантов</a></p>
         </article>
         <article class="metric-card reveal">
-            <div class="metric-card__top"><span class="metric-icon metric-icon--green"><?= icon('shield') ?></span><span class="trend">Команда</span></div>
-            <strong><?= $stats['staff'] ?></strong><p>Сотрудников</p>
-        </article>
-        <article class="metric-card reveal">
-            <div class="metric-card__top"><span class="metric-icon metric-icon--red"><?= icon('lock') ?></span><span class="trend">Контроль</span></div>
-            <strong><?= $stats['blocked'] ?></strong><p>Заблокировано</p>
+            <div class="metric-card__top"><span class="metric-icon metric-icon--green"><?= icon('shield') ?></span><span class="trend">Активные</span></div>
+            <strong><?= $stats['staff'] ?></strong><p><a href="<?= e(url('/staff')) ?>">Сотрудников</a></p>
         </article>
     </section>
 
     <section class="dashboard-grid">
         <article class="panel reveal">
             <div class="panel__header">
-                <div><p class="page-eyebrow">Последние изменения</p><h3>Новые пользователи</h3></div>
-                <a class="text-link" href="<?= e(url('/users')) ?>">Все пользователи <?= icon('chevron-right', 15) ?></a>
+                <div><p class="page-eyebrow">Последние изменения</p><h3>Новые курсанты</h3></div>
+                <a class="text-link" href="<?= e(url('/students')) ?>">Курсанты <?= icon('chevron-right', 15) ?></a>
             </div>
             <div class="people-list">
                 <?php if (!$recentUsers): ?><div class="empty-inline">Пользователи пока не добавлены.</div><?php endif; ?>
@@ -56,11 +48,18 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
 
         <article class="panel quick-panel reveal">
             <div class="panel__header"><div><p class="page-eyebrow">Быстрые действия</p><h3>Начните работу</h3></div></div>
-            <a class="quick-action" href="<?= e(url('/users')) ?>" data-open-create-user>
+            <a class="quick-action" href="<?= e(url('/students')) ?>">
                 <span class="quick-action__icon"><?= icon('plus') ?></span>
-                <span><strong>Добавить пользователя</strong><small>Курсант или сотрудник</small></span>
+                <span><strong>Добавить курсанта</strong><small>Указать срок обучения</small></span>
                 <?= icon('chevron-right', 17) ?>
             </a>
+            <?php if (!$currentUser->isAdmin()): ?>
+            <a class="quick-action" href="<?= e(url('/staff')) ?>">
+                <span class="quick-action__icon quick-action__icon--dark"><?= icon('shield') ?></span>
+                <span><strong>Добавить сотрудника</strong><small>Назначить роль</small></span>
+                <?= icon('chevron-right', 17) ?>
+            </a>
+            <?php endif; ?>
             <a class="quick-action" href="<?= e(url('/chat')) ?>">
                 <span class="quick-action__icon quick-action__icon--dark"><?= icon('message') ?></span>
                 <span><strong>Открыть сообщения</strong><small><?= $unreadMessages ? $unreadMessages . ' непрочитанных' : 'Новых сообщений нет' ?></small></span>
@@ -79,9 +78,8 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
         <article class="panel role-card reveal">
             <span class="metric-icon metric-icon--blue"><?= icon('shield', 24) ?></span>
             <p class="page-eyebrow">Ваш доступ</p><h3><?= e($currentUser->roleTitle()) ?></h3>
-            <p>Учётная запись активна. Данные доступа управляются администратором автошколы.</p>
+            <p>Учётная запись активна. Данные доступа управляются руководством и администраторами автошколы.</p>
             <a class="text-link" href="<?= e(url('/change-password')) ?>">Изменить пароль <?= icon('chevron-right', 15) ?></a>
         </article>
     </section>
 <?php endif; ?>
-

@@ -83,10 +83,22 @@ try {
     echo "PASS login\n";
 
     $usersPage = call('GET', $baseUrl . '/users', $cookieFile);
-    $token = csrf($usersPage['body']);
+    if ($usersPage['status'] !== 302 || !str_contains($usersPage['headers'], '/students')) {
+        throw new RuntimeException('Legacy user list did not redirect to students.');
+    }
+    $studentsPage = call('GET', $baseUrl . '/students', $cookieFile);
+    $token = csrf($studentsPage['body']);
+    $staffPage = call('GET', $baseUrl . '/staff', $cookieFile);
+    if ($staffPage['status'] !== 200 || str_contains($staffPage['body'], 'data-user-create')) {
+        throw new RuntimeException('Administrator staff page must be read-only.');
+    }
     $suffix = bin2hex(random_bytes(4));
     $createdLogin = 'smoke.student.' . $suffix;
     $headers = ['X-CSRF-TOKEN: ' . $token, 'X-Requested-With: XMLHttpRequest'];
+
+    if (call('POST', $baseUrl . '/users', $cookieFile, ['role' => 'director'], $headers)['status'] !== 403) {
+        throw new RuntimeException('Administrator can assign director role.');
+    }
 
     $created = jsonResult(call('POST', $baseUrl . '/users', $cookieFile, [
         'login' => $createdLogin,
@@ -96,9 +108,13 @@ try {
         'last_name' => 'Проверочный',
         'middle_name' => 'Тестович',
         'role' => 'student',
+        'access_months' => '6',
         'password' => 'Student123!',
     ], $headers), 201);
     $createdUserId = (int) $created['user']['id'];
+    if (!$created['user']['access_expires_at']) {
+        throw new RuntimeException('Student access expiry was not set.');
+    }
     echo "PASS create-user\n";
 
     jsonResult(call('POST', $baseUrl . "/users/{$createdUserId}/update", $cookieFile, [
@@ -109,6 +125,7 @@ try {
         'last_name' => 'Проверочный',
         'middle_name' => 'Обновлённый',
         'role' => 'student',
+        'access_months' => '6',
     ], $headers), 200);
     echo "PASS update-user\n";
 

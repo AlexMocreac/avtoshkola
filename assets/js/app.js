@@ -132,17 +132,19 @@
         userForm.reset();
         clearUserErrors();
         const editing = Boolean(user);
+        const noun = userForm.dataset.userGroup === 'students' ? 'курсанта' : 'сотрудника';
         userForm.dataset.mode = editing ? 'edit' : 'create';
         userForm.dataset.userId = editing ? String(user.id) : '';
         qs('#userModalEyebrow').textContent = editing ? 'Карточка пользователя' : 'Новая учётная запись';
-        qs('#userModalTitle').textContent = editing ? 'Редактировать пользователя' : 'Добавить пользователя';
+        qs('#userModalTitle').textContent = editing ? `Редактировать ${noun}` : `Добавить ${noun}`;
         qs('#userModalSubtitle').textContent = editing ? 'Изменения применятся сразу после сохранения.' : 'Доступ можно заблокировать в любой момент.';
-        qs('#userFormSubmit').textContent = editing ? 'Сохранить изменения' : 'Создать пользователя';
+        qs('#userFormSubmit').textContent = editing ? 'Сохранить изменения' : `Создать ${noun}`;
         passwordField?.classList.toggle('is-hidden', editing);
+        qs('#restartAccessField')?.classList.toggle('is-hidden', !editing);
         const passwordInput = qs('[name="password"]', userForm);
         if (passwordInput) passwordInput.required = !editing;
         if (editing) {
-            ['last_name', 'first_name', 'middle_name', 'role', 'login', 'phone', 'email'].forEach((name) => {
+            ['last_name', 'first_name', 'middle_name', 'role', 'login', 'phone', 'email', 'access_months'].forEach((name) => {
                 const input = qs(`[name="${name}"]`, userForm);
                 if (input) input.value = user[name] ?? '';
             });

@@ -34,6 +34,11 @@ final class Validator
         if (!array_key_exists($role, \App\Models\User::ROLES)) {
             $errors['role'] = 'Выберите роль.';
         }
+        $months = (string) ($input['access_months'] ?? '');
+        if ($role === \App\Models\User::ROLE_STUDENT && $months !== '' &&
+            (!ctype_digit($months) || (int) $months < 1 || (int) $months > 120)) {
+            $errors['access_months'] = 'Укажите срок от 1 до 120 месяцев или оставьте поле пустым.';
+        }
 
         if ($creating) {
             $password = (string) ($input['password'] ?? '');
@@ -45,4 +50,3 @@ final class Validator
         return $errors;
     }
 }
-

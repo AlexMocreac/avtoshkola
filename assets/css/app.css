@@ -176,6 +176,8 @@ img, svg { display: block; }
 .field__label b { color: var(--red); }
 .field__control { min-height: 48px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); display: flex; align-items: center; transition: border-color var(--transition), box-shadow var(--transition), background var(--transition); overflow: hidden; }
 .field__control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(71, 104, 219, .12); }
+.field__control--checkbox { gap: 8px; padding: 0 12px; font-size: 11px; }
+.field__control--checkbox input, .modal .field__control--checkbox input { width: 16px; height: 16px; min-width: 16px; padding: 0; accent-color: var(--accent); }
 .field__control--icon { padding-left: 14px; color: #9a9da2; gap: 8px; }
 .field__control input, .field__control select { width: 100%; height: 46px; min-width: 0; padding: 0 14px; color: var(--ink); border: 0; outline: 0; background: transparent; font-size: 13px; }
 .field__control--icon input { padding-left: 2px; }
@@ -214,6 +216,11 @@ img, svg { display: block; }
 .road-line { height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .1), transparent); position: absolute; transform: rotate(-25deg); }
 .road-line--one { width: 430px; right: -60px; bottom: 34px; }.road-line--two { width: 310px; right: -50px; bottom: 72px; }.road-line--three { width: 190px; right: -10px; bottom: 110px; }
 .metric-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.metric-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metric-card p a { color: inherit; text-decoration: none; }
+.metric-card p a:hover { text-decoration: underline; }
+.access-expiry { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.filter-bar--students { grid-template-columns: minmax(230px, 1fr) 180px auto auto; }
 .metric-card { min-height: 155px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: 0 5px 16px rgba(15, 17, 21, .025); }
 .metric-card__top { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; }
 .metric-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; }

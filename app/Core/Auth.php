@@ -19,6 +19,7 @@ final class Auth
             return null;
         }
 
+        User::blockExpiredStudents();
         $user = User::find((int) $_SESSION['user_id']);
         if (!$user || $user->status !== User::STATUS_ACTIVE) {
             self::logout();
@@ -37,6 +38,7 @@ final class Auth
 
     public static function attempt(string $login, string $password): bool
     {
+        User::blockExpiredStudents();
         $user = User::findForLogin($login);
         if (!$user || $user->status !== User::STATUS_ACTIVE || !password_verify($password, $user->passwordHash)) {
             return false;
@@ -69,10 +71,13 @@ final class Auth
         return $user;
     }
 
-    public static function requireAdmin(): User
+    public static function requireUserManager(): User
     {
         $user = self::requireLogin();
-        if ($user->role !== User::ROLE_ADMIN) {
+        if (!$user->canManageUsers()) {
+            if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+                Response::json(['ok' => false, 'message' => 'Недостаточно прав для управления пользователями.'], 403);
+            }
             http_response_code(403);
             View::render('errors/403', ['pageTitle' => 'Нет доступа', 'currentUser' => $user]);
             exit;
@@ -80,4 +85,3 @@ final class Auth
         return $user;
     }
 }
-

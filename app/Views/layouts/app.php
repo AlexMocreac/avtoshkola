@@ -41,10 +41,14 @@ $layoutUnread = isset($unreadMessages) ? (int) $unreadMessages : Conversation::t
                     <span class="nav-item__icon"><?= icon('grid') ?></span>
                     <span class="nav-item__label">Главная</span>
                 </a>
-                <?php if ($currentUser->isAdmin()): ?>
-                    <a class="nav-item <?= is_active_route('/users') ? 'is-active' : '' ?>" href="<?= e(url('/users')) ?>">
+                <?php if ($currentUser->canManageUsers()): ?>
+                    <a class="nav-item <?= is_active_route('/students') ? 'is-active' : '' ?>" href="<?= e(url('/students')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
-                        <span class="nav-item__label">Пользователи</span>
+                        <span class="nav-item__label">Курсанты</span>
+                    </a>
+                    <a class="nav-item <?= is_active_route('/staff') ? 'is-active' : '' ?>" href="<?= e(url('/staff')) ?>">
+                        <span class="nav-item__icon"><?= icon('shield') ?></span>
+                        <span class="nav-item__label">Сотрудники</span>
                     </a>
                 <?php endif; ?>
                 <a class="nav-item <?= is_active_route('/chat') ? 'is-active' : '' ?>" href="<?= e(url('/chat')) ?>">
