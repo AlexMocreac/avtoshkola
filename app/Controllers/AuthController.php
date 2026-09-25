@@ -9,6 +9,7 @@ use App\Core\Csrf;
 use App\Core\Flash;
 use App\Core\Response;
 use App\Core\View;
+use App\Models\ActivityLog;
 
 final class AuthController
 {
@@ -52,6 +53,7 @@ final class AuthController
 
         unset($_SESSION['_login_attempts']);
         $user = Auth::user();
+        ActivityLog::record('auth.login', 'Вход в систему', $user, [], 'user', $user->id);
         if ($user->mustChangePassword) {
             Response::redirect('/change-password');
         }
@@ -65,6 +67,10 @@ final class AuthController
     public function logout(): void
     {
         Csrf::enforce();
+        $user = Auth::user();
+        if ($user) {
+            ActivityLog::record('auth.logout', 'Выход из системы', $user, [], 'user', $user->id);
+        }
         Auth::logout();
         Response::redirect('/login');
     }
@@ -106,8 +112,8 @@ final class AuthController
         }
 
         \App\Models\User::changePassword($user->id, $password);
+        ActivityLog::record('auth.password_changed', 'Изменён собственный пароль', $user, [$user], 'user', $user->id);
         Flash::set('success', 'Пароль обновлён. Добро пожаловать!');
         Response::redirect('/dashboard');
     }
 }
-

@@ -84,4 +84,32 @@ final class Auth
         }
         return $user;
     }
+
+    public static function requireCrmAccess(): User
+    {
+        $user = self::requireLogin();
+        if (!$user->canUseCrm()) {
+            self::deny($user, 'Недостаточно прав для доступа к CRM.');
+        }
+        return $user;
+    }
+
+    public static function requireStaff(): User
+    {
+        $user = self::requireLogin();
+        if (!$user->canUseTasks()) {
+            self::deny($user, 'Раздел доступен только сотрудникам автошколы.');
+        }
+        return $user;
+    }
+
+    private static function deny(User $user, string $message): never
+    {
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            Response::json(['ok' => false, 'message' => $message], 403);
+        }
+        http_response_code(403);
+        View::render('errors/403', ['pageTitle' => 'Нет доступа', 'currentUser' => $user]);
+        exit;
+    }
 }

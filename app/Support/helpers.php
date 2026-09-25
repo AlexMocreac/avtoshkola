@@ -64,6 +64,38 @@ function format_date(?string $value, string $format = 'd.m.Y H:i'): string
     return $time ? date($format, $time) : '—';
 }
 
+function date_picker(
+    string $name,
+    ?string $value = '',
+    bool $withTime = false,
+    bool $required = false,
+    string $ariaLabel = ''
+): string {
+    static $counter = 0;
+    $counter++;
+    $id = 'date-picker-' . $counter;
+    $placeholder = $withTime ? 'дд.мм.гггг, чч:мм' : 'дд.мм.гггг';
+    $label = $ariaLabel !== '' ? $ariaLabel : ($withTime ? 'Выбрать дату и время' : 'Выбрать дату');
+
+    return '<div class="date-picker" data-date-picker data-with-time="' . ($withTime ? '1' : '0') . '">'
+        . '<input type="hidden" name="' . e($name) . '" value="' . e((string) $value) . '" data-date-value>'
+        . '<input class="date-picker__display" id="' . e($id) . '" type="text" value="" placeholder="' . e($placeholder) . '" readonly '
+        . ($required ? 'required ' : '') . 'aria-label="' . e($label) . '" data-date-display>'
+        . '<button class="date-picker__button" type="button" aria-label="' . e($label) . '" aria-haspopup="dialog" aria-expanded="false" data-date-trigger>'
+        . icon('calendar', 18) . '</button></div>';
+}
+
+function format_bytes(int $bytes): string
+{
+    if ($bytes < 1024) {
+        return $bytes . ' Б';
+    }
+    if ($bytes < 1024 * 1024) {
+        return number_format($bytes / 1024, 1, ',', ' ') . ' КБ';
+    }
+    return number_format($bytes / (1024 * 1024), 1, ',', ' ') . ' МБ';
+}
+
 function is_active_route(string $prefix): bool
 {
     $path = request_path();
@@ -101,8 +133,16 @@ function icon(string $name, int $size = 20): string
         'clock' => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
         'eye' => '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12"/><circle cx="12" cy="12" r="3"/>',
         'more' => '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
+        'file' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+        'check-square' => '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 6-7"/>',
+        'phone' => '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z"/>',
+        'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+        'calendar' => '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+        'repeat' => '<path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+        'upload' => '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/>',
+        'paperclip' => '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+        'download' => '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
     ];
     $body = $paths[$name] ?? $paths['grid'];
     return '<svg class="icon" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $body . '</svg>';
 }
-

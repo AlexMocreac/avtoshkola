@@ -42,7 +42,7 @@
                 <div class="form-alert form-alert--error" role="alert"><?= icon('lock', 18) ?><span><?= e($error) ?></span></div>
             <?php endif; ?>
 
-            <form method="post" action="<?= e(url('/login')) ?>" class="auth-form">
+            <form method="post" action="<?= e(url('/login')) ?>" class="auth-form" data-submit-loading data-loading-text="Входим…">
                 <?= csrf_field() ?>
                 <label class="field">
                     <span class="field__label">Логин или email</span>
@@ -72,4 +72,3 @@
         <p class="auth-panel__footer">© <?= date('Y') ?> Центр Обучения Вождению</p>
     </section>
 </main>
-

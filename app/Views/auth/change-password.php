@@ -8,7 +8,7 @@
         <p class="page-eyebrow"><?= $forced ? 'Первый вход' : 'Безопасность' ?></p>
         <h1><?= $forced ? 'Создайте постоянный пароль' : 'Изменить пароль' ?></h1>
         <p><?= $forced ? 'Временный пароль сработал. Теперь задайте пароль, который будете знать только вы.' : 'Для защиты аккаунта подтвердите текущий пароль.' ?></p>
-        <form method="post" action="<?= e(url('/change-password')) ?>" class="auth-form">
+        <form method="post" action="<?= e(url('/change-password')) ?>" class="auth-form" data-submit-loading>
             <?= csrf_field() ?>
             <label class="field">
                 <span class="field__label">Текущий пароль</span>
@@ -28,4 +28,3 @@
         <?php if (!$forced): ?><a class="text-link password-card__back" href="<?= e(url('/dashboard')) ?>"><?= icon('arrow-left', 16) ?> Вернуться в CRM</a><?php endif; ?>
     </section>
 </main>
-

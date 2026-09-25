@@ -185,10 +185,31 @@ final class User
 
     public static function blockExpiredStudents(): void
     {
-        Database::connection()->exec(
+        $pdo = Database::connection();
+        $expired = $pdo->query(
+            "SELECT * FROM users WHERE role = 'student' AND status = 'active'
+             AND access_expires_at IS NOT NULL AND access_expires_at <= NOW()"
+        )->fetchAll();
+        $pdo->exec(
             "UPDATE users SET status = 'blocked' WHERE role = 'student' AND status = 'active'
              AND access_expires_at IS NOT NULL AND access_expires_at <= NOW()"
         );
+        foreach ($expired as $row) {
+            $student = self::fromRow($row);
+            ActivityLog::record(
+                'user.access_expired',
+                'Автоматически заблокирован доступ по истечении срока',
+                null,
+                [$student],
+                'user',
+                $student->id,
+                [
+                    'name' => $student->fullName(),
+                    'role_key' => $student->role,
+                    'changes' => [['field' => 'Статус', 'from' => 'Активен', 'to' => 'Заблокирован']],
+                ]
+            );
+        }
     }
 
     public function accessExpired(): bool
@@ -204,6 +225,54 @@ final class User
     public function canManageUsers(): bool
     {
         return in_array($this->role, [self::ROLE_DIRECTOR, self::ROLE_DEPUTY_DIRECTOR, self::ROLE_ADMIN], true);
+    }
+
+    public function canUseCrm(): bool
+    {
+        return $this->canManageUsers();
+    }
+
+    public function canUseTasks(): bool
+    {
+        return !$this->isStudent();
+    }
+
+    public static function staff(): array
+    {
+        $stmt = Database::connection()->query(
+            "SELECT * FROM users WHERE status = 'active' AND role <> 'student' ORDER BY last_name, first_name"
+        );
+        return array_map([self::class, 'fromRow'], $stmt->fetchAll());
+    }
+
+    public static function searchStaff(string $query, int $limit = 12): array
+    {
+        $query = trim($query);
+        if (mb_strlen($query) < 2) {
+            return [];
+        }
+
+        $limit = max(1, min(20, $limit));
+        $stmt = Database::connection()->prepare(
+            "SELECT id, first_name, last_name, middle_name, role
+             FROM users
+             WHERE status = 'active' AND role <> 'student'
+               AND INSTR(LOWER(CONCAT_WS(' ', last_name, first_name, middle_name, login)), LOWER(:query)) > 0
+             ORDER BY last_name, first_name
+             LIMIT {$limit}"
+        );
+        $stmt->execute(['query' => $query]);
+
+        return array_map(static function (array $row): array {
+            $firstName = (string) $row['first_name'];
+            $lastName = (string) $row['last_name'];
+            return [
+                'id' => (int) $row['id'],
+                'name' => trim($lastName . ' ' . $firstName . ' ' . (string) ($row['middle_name'] ?? '')),
+                'role' => self::ROLES[(string) $row['role']] ?? (string) $row['role'],
+                'initials' => mb_strtoupper(mb_substr($firstName, 0, 1) . mb_substr($lastName, 0, 1)),
+            ];
+        }, $stmt->fetchAll());
     }
 
     public function canManage(self $target): bool

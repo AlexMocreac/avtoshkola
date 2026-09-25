@@ -9,6 +9,7 @@ use App\Core\Csrf;
 use App\Core\Response;
 use App\Core\View;
 use App\Models\Conversation;
+use App\Models\ActivityLog;
 use App\Models\Message;
 use App\Models\User;
 
@@ -48,6 +49,7 @@ final class ChatController
 
         try {
             $id = Conversation::createOrFind($user, $contact);
+            ActivityLog::record('chat.opened', 'Открыт диалог', $user, [$contact], 'conversation', $id);
             Response::json(['ok' => true, 'conversation_id' => $id, 'redirect' => url('/chat?conversation=' . $id)]);
         } catch (\DomainException $exception) {
             Response::json(['ok' => false, 'message' => $exception->getMessage()], 422);
@@ -74,11 +76,18 @@ final class ChatController
         $user = Auth::requireLogin();
         Csrf::enforce(true);
         try {
+            $conversationId = (int) ($_POST['conversation_id'] ?? 0);
+            $conversation = Conversation::findForUser($conversationId, $user->id);
             $message = Message::create(
-                (int) ($_POST['conversation_id'] ?? 0),
+                $conversationId,
                 $user->id,
                 (string) ($_POST['body'] ?? '')
             );
+            $impactedId = $conversation
+                ? ((int) $conversation['student_id'] === $user->id ? (int) $conversation['employee_id'] : (int) $conversation['student_id'])
+                : 0;
+            $impacted = User::find($impactedId);
+            ActivityLog::record('chat.message_sent', 'Отправлено сообщение', $user, $impacted ? [$impacted] : [], 'conversation', $conversationId);
             Response::json(['ok' => true, 'message' => $message], 201);
         } catch (\DomainException $exception) {
             Response::json(['ok' => false, 'message' => $exception->getMessage()], 422);

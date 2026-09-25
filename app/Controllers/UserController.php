@@ -10,6 +10,7 @@ use App\Core\Response;
 use App\Core\Validator;
 use App\Core\View;
 use App\Models\User;
+use App\Models\ActivityLog;
 use PDOException;
 
 final class UserController
@@ -65,6 +66,11 @@ final class UserController
 
         try {
             $user = User::create($_POST, $admin->id);
+            ActivityLog::record('user.created', 'Создан пользователь', $admin, [$user], 'user', $user->id, [
+                'name' => $user->fullName(),
+                'role' => $user->roleTitle(),
+                'role_key' => $user->role,
+            ]);
             Response::json([
                 'ok' => true,
                 'message' => 'Пользователь создан. Передайте ему временный пароль безопасным способом.',
@@ -98,6 +104,19 @@ final class UserController
             $data['access_months_changed'] = $target->role !== $data['role'] || $target->accessMonths !== $newMonths
                 || ($data['restart_access'] ?? '') === '1';
             $user = User::updateUser($target->id, $data, $admin->id);
+            $changes = ActivityLog::changes(
+                $this->userAuditState($target),
+                $this->userAuditState($user),
+                $this->userAuditFields()
+            );
+            if ($changes) {
+                ActivityLog::record('user.updated', 'Обновлена учётная запись', $admin, [$user], 'user', $user->id, [
+                    'name' => $user->fullName(),
+                    'role' => $user->roleTitle(),
+                    'role_key' => $user->role,
+                    'changes' => $changes,
+                ]);
+            }
             Response::json(['ok' => true, 'message' => 'Данные пользователя обновлены.', 'user' => $this->serialize($user)]);
         } catch (PDOException $exception) {
             $this->uniqueError($exception);
@@ -125,6 +144,23 @@ final class UserController
             Response::json(['ok' => false, 'message' => 'Срок доступа курсанта истёк. Сначала измените срок обучения.'], 422);
         }
         User::setStatus($target->id, $status, $admin->id);
+        ActivityLog::record(
+            $status === User::STATUS_BLOCKED ? 'user.blocked' : 'user.unblocked',
+            $status === User::STATUS_BLOCKED ? 'Заблокирован доступ пользователя' : 'Восстановлен доступ пользователя',
+            $admin,
+            [$target],
+            'user',
+            $target->id,
+            [
+                'name' => $target->fullName(),
+                'role_key' => $target->role,
+                'changes' => [[
+                    'field' => 'Статус',
+                    'from' => $target->status === User::STATUS_ACTIVE ? 'Активен' : 'Заблокирован',
+                    'to' => $status === User::STATUS_ACTIVE ? 'Активен' : 'Заблокирован',
+                ]],
+            ]
+        );
         Response::json(['ok' => true, 'message' => $status === User::STATUS_BLOCKED ? 'Доступ пользователя заблокирован.' : 'Доступ пользователя восстановлен.']);
     }
 
@@ -140,6 +176,10 @@ final class UserController
 
         $password = $this->temporaryPassword();
         User::resetPassword($target->id, $password, $admin->id);
+        ActivityLog::record('user.password_reset', 'Создан временный пароль', $admin, [$target], 'user', $target->id, [
+            'name' => $target->fullName(),
+            'role_key' => $target->role,
+        ]);
         Response::json([
             'ok' => true,
             'message' => 'Создан новый временный пароль.',
@@ -161,6 +201,11 @@ final class UserController
             Response::json(['ok' => false, 'message' => 'Нельзя удалить собственную учётную запись.'], 422);
         }
         User::softDelete($target->id, $admin->id);
+        ActivityLog::record('user.deleted', 'Пользователь удалён', $admin, [$target], 'user', $target->id, [
+            'name' => $target->fullName(),
+            'role_key' => $target->role,
+            'changes' => [['field' => 'Состояние', 'from' => $target->status === User::STATUS_ACTIVE ? 'Активен' : 'Заблокирован', 'to' => 'Удалён']],
+        ]);
         Response::json(['ok' => true, 'message' => 'Пользователь удалён.']);
     }
 
@@ -210,5 +255,37 @@ final class UserController
             Response::json(['ok' => false, 'message' => 'Такой логин или email уже используется.'], 422);
         }
         throw $exception;
+    }
+
+    private function userAuditState(User $user): array
+    {
+        return [
+            'login' => $user->login,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'first_name' => $user->firstName,
+            'last_name' => $user->lastName,
+            'middle_name' => $user->middleName,
+            'role' => $user->roleTitle(),
+            'access_months' => $user->accessMonths !== null ? $user->accessMonths . ' мес.' : null,
+            'access_expires_at' => $user->accessExpiresAt ? format_date($user->accessExpiresAt) : null,
+            'status' => $user->status === User::STATUS_ACTIVE ? 'Активен' : 'Заблокирован',
+        ];
+    }
+
+    private function userAuditFields(): array
+    {
+        return [
+            'login' => 'Логин',
+            'email' => 'Email',
+            'phone' => 'Телефон',
+            'first_name' => 'Имя',
+            'last_name' => 'Фамилия',
+            'middle_name' => 'Отчество',
+            'role' => 'Роль',
+            'access_months' => 'Срок доступа',
+            'access_expires_at' => 'Доступ до',
+            'status' => 'Статус',
+        ];
     }
 }

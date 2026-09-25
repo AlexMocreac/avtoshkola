@@ -4,10 +4,12 @@ use App\Core\Auth;
 use App\Core\Csrf;
 use App\Core\Flash;
 use App\Models\Conversation;
+use App\Models\Warning;
 
 $currentUser = $currentUser ?? Auth::user();
 $flashes = Flash::pull();
 $layoutUnread = isset($unreadMessages) ? (int) $unreadMessages : Conversation::totalUnread($currentUser->id);
+$layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->canUseCrm() ? Warning::count($currentUser) : 0);
 ?>
 <!doctype html>
 <html lang="ru">
@@ -41,7 +43,34 @@ $layoutUnread = isset($unreadMessages) ? (int) $unreadMessages : Conversation::t
                     <span class="nav-item__icon"><?= icon('grid') ?></span>
                     <span class="nav-item__label">Главная</span>
                 </a>
+                <?php if ($currentUser->canUseCrm()): ?>
+                    <a class="nav-item <?= is_active_route('/events') ? 'is-active' : '' ?>" href="<?= e(url('/events')) ?>">
+                        <span class="nav-item__icon"><?= icon('activity') ?></span>
+                        <span class="nav-item__label">Лента событий</span>
+                    </a>
+                    <a class="nav-item <?= is_active_route('/warnings') ? 'is-active' : '' ?>" href="<?= e(url('/warnings')) ?>">
+                        <span class="nav-item__icon"><?= icon('bell') ?></span>
+                        <span class="nav-item__label">Предупреждения</span>
+                        <span class="nav-item__badge <?= $layoutWarnings === 0 ? 'is-hidden' : '' ?>"><?= $layoutWarnings ?></span>
+                    </a>
+                    <p class="nav-label nav-label--section">CRM</p>
+                    <a class="nav-item <?= is_active_route('/crm/leads') ? 'is-active' : '' ?>" href="<?= e(url('/crm/leads')) ?>">
+                        <span class="nav-item__icon"><?= icon('users') ?></span>
+                        <span class="nav-item__label">Клиенты и лиды</span>
+                    </a>
+                    <a class="nav-item <?= is_active_route('/crm/contracts') ? 'is-active' : '' ?>" href="<?= e(url('/crm/contracts')) ?>">
+                        <span class="nav-item__icon"><?= icon('file') ?></span>
+                        <span class="nav-item__label">Договоры</span>
+                    </a>
+                <?php endif; ?>
+                <?php if ($currentUser->canUseTasks()): ?>
+                    <a class="nav-item <?= is_active_route('/tasks') ? 'is-active' : '' ?>" href="<?= e(url('/tasks')) ?>">
+                        <span class="nav-item__icon"><?= icon('check-square') ?></span>
+                        <span class="nav-item__label">Задачи</span>
+                    </a>
+                <?php endif; ?>
                 <?php if ($currentUser->canManageUsers()): ?>
+                    <p class="nav-label nav-label--section">Пользователи</p>
                     <a class="nav-item <?= is_active_route('/students') ? 'is-active' : '' ?>" href="<?= e(url('/students')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
                         <span class="nav-item__label">Курсанты</span>
@@ -91,6 +120,12 @@ $layoutUnread = isset($unreadMessages) ? (int) $unreadMessages : Conversation::t
                     </div>
                 </div>
                 <div class="topbar__actions">
+                    <?php if ($currentUser->canUseCrm()): ?>
+                    <a class="icon-button topbar__notification" href="<?= e(url('/warnings')) ?>" aria-label="Предупреждения: <?= $layoutWarnings ?>" title="Предупреждения">
+                        <?= icon('clock') ?>
+                        <span class="notification-count <?= $layoutWarnings === 0 ? 'is-hidden' : '' ?>"><?= $layoutWarnings ?></span>
+                    </a>
+                    <?php endif; ?>
                     <a class="icon-button topbar__notification" href="<?= e(url('/chat')) ?>" aria-label="Сообщения" title="Сообщения">
                         <?= icon('bell') ?>
                         <span class="notification-dot <?= $layoutUnread === 0 ? 'is-hidden' : '' ?>" id="topUnreadDot"></span>
