@@ -21,21 +21,31 @@
     </form>
 </section>
 
-<section class="lead-board reveal" aria-label="Воронка <?= e($directions[$filters['direction']]) ?>"<?= $focusedLeadId ? ' data-auto-open-lead="' . (int) $focusedLeadId . '"' : '' ?>>
+<p class="sr-only" id="leadDragInstructions">Перетащите карточку на другой этап. С клавиатуры: Enter или пробел — выбрать, стрелки влево и вправо — этап, Enter — переместить, Escape — отменить.</p>
+<div class="sr-only" role="status" aria-live="polite" data-lead-drag-announcement></div>
+<section class="lead-board reveal" data-lead-board aria-label="Воронка <?= e($directions[$filters['direction']]) ?>"<?= $focusedLeadId ? ' data-auto-open-lead="' . (int) $focusedLeadId . '"' : '' ?>>
     <?php foreach ($statuses as $statusKey => $statusTitle): ?>
-        <section class="lead-column lead-column--<?= e($statusKey) ?>">
+        <section class="lead-column lead-column--<?= e($statusKey) ?>" data-lead-status="<?= e($statusKey) ?>" data-status-title="<?= e($statusTitle) ?>">
             <header class="lead-column__header"><span><?= e($statusTitle) ?></span><b><?= $stats[$statusKey] ?></b></header>
             <div class="lead-column__body">
+                <div class="lead-drop-slot" aria-hidden="true">
+                    <span class="lead-drop-slot__icon"><?= icon('plus', 20) ?></span>
+                    <strong data-drop-label>Перетащите сюда</strong>
+                    <span><?= e($statusTitle) ?></span>
+                </div>
                 <?php if (!$leadsByStatus[$statusKey]): ?><p class="lead-column__empty">Пока пусто</p><?php endif; ?>
                 <?php foreach ($leadsByStatus[$statusKey] as $lead): ?>
                     <?php $leadJson = e(json_encode($lead, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>
-                    <article class="lead-kanban-card" id="lead-<?= (int) $lead['id'] ?>">
+                    <article class="lead-kanban-card" id="lead-<?= (int) $lead['id'] ?>" data-lead-id="<?= (int) $lead['id'] ?>">
                         <div class="lead-kanban-card__top">
                             <button class="lead-person" type="button" data-lead-details="<?= $lead['id'] ?>">
                                 <span class="avatar avatar--soft"><?= e(initials($lead['first_name'] ?: ($lead['company_name'] ?: 'Л'), $lead['last_name'] ?: '')) ?></span>
                                 <span><strong><?= e(\App\Models\Lead::displayName($lead)) ?></strong><small><?= e($lead['company_name'] ?: ($lead['source'] ?: 'Источник не указан')) ?></small></span>
                             </button>
-                            <span class="lead-kanban-card__number">#<?= $lead['id'] ?></span>
+                            <div class="lead-kanban-card__tools">
+                                <span class="lead-kanban-card__number">#<?= $lead['id'] ?></span>
+                                <button class="lead-drag-handle" type="button" data-lead-drag-handle aria-label="Переместить: <?= e(\App\Models\Lead::displayName($lead)) ?>" aria-describedby="leadDragInstructions" title="Перетащить на другой этап"><svg width="16" height="18" viewBox="0 0 16 18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="9" r="1.5"/><circle cx="11" cy="9" r="1.5"/><circle cx="5" cy="14" r="1.5"/><circle cx="11" cy="14" r="1.5"/></svg></button>
+                            </div>
                         </div>
                         <div class="lead-kanban-card__contacts">
                             <?php if ($lead['phone']): ?><a href="tel:<?= e(preg_replace('/[^+0-9]/', '', $lead['phone'])) ?>"><?= icon('phone', 14) ?> <?= e($lead['phone']) ?></a><?php endif; ?>
@@ -48,7 +58,7 @@
                         <footer class="lead-kanban-card__actions">
                             <button class="icon-button" type="button" title="Карточка и история" data-lead-details="<?= $lead['id'] ?>"><?= icon('activity', 16) ?></button>
                             <?php if ($lead['phone']): ?><a class="icon-button" href="sms:<?= e(preg_replace('/[^+0-9]/', '', $lead['phone'])) ?>" title="Написать SMS"><?= icon('message', 16) ?></a><?php endif; ?>
-                            <?php if (!in_array($lead['status'], ['contract', 'refused'], true)): ?><a class="button button--small button--contract" href="<?= e(url('/crm/contracts?create=1&lead_id=' . $lead['id'])) ?>"><?= icon('file', 14) ?> Договор</a><?php endif; ?>
+                            <a class="button button--small button--contract<?= in_array($lead['status'], ['contract', 'refused'], true) ? ' is-hidden' : '' ?>" data-lead-contract href="<?= e(url('/crm/contracts?create=1&lead_id=' . $lead['id'])) ?>"><?= icon('file', 14) ?> Договор</a>
                             <button class="icon-button" type="button" title="Редактировать" data-record-edit="lead" data-record="<?= $leadJson ?>" data-dialog-open="leadModal"><?= icon('edit', 16) ?></button>
                             <form method="post" action="<?= e(url('/crm/leads/' . $lead['id'] . '/archive')) ?>" data-confirm-message="Перенести лида в архив?"><?= csrf_field() ?><button class="icon-button icon-button--danger" type="submit" title="В архив"><?= icon('trash', 16) ?></button></form>
                         </footer>

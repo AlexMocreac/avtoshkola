@@ -96,6 +96,16 @@ final class Lead
         $stmt->execute(self::payload($data) + ['updated_by' => $userId, 'id' => $id]);
     }
 
+    public static function moveToStatus(int $id, string $fromStatus, string $status, int $userId): bool
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE crm_leads SET status = :status, updated_by = :updated_by, updated_at = NOW()
+             WHERE id = :id AND status = :from_status AND deleted_at IS NULL'
+        );
+        $stmt->execute(['status' => $status, 'updated_by' => $userId, 'id' => $id, 'from_status' => $fromStatus]);
+        return $stmt->rowCount() === 1;
+    }
+
     public static function archive(int $id, int $userId): void
     {
         $stmt = Database::connection()->prepare(

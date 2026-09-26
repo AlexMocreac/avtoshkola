@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Csrf;
+use App\Core\Database;
 use App\Core\Flash;
 use App\Core\Response;
 use App\Core\Validator;
@@ -105,6 +106,57 @@ final class LeadController
         }
         Flash::set('success', 'Карточка лида обновлена.');
         Response::redirect($this->indexPath($_POST));
+    }
+
+    public function status(string $id): void
+    {
+        $user = Auth::requireCrmAccess();
+        Csrf::enforce(true);
+        $status = $_POST['status'] ?? null;
+        $fromStatus = $_POST['from_status'] ?? null;
+        if (!is_string($status) || !isset(Lead::STATUSES[$status])
+            || !is_string($fromStatus) || !isset(Lead::STATUSES[$fromStatus])) {
+            Response::json(['ok' => false, 'message' => 'Выберите допустимый этап лида.'], 422);
+        }
+        $lead = Lead::find((int) $id);
+        if (!$lead) {
+            Response::json(['ok' => false, 'message' => 'Лид не найден.'], 404);
+        }
+        if ($lead['status'] !== $fromStatus) {
+            Response::json(['ok' => false, 'message' => 'Этап уже изменён. Обновите страницу и повторите действие.'], 409);
+        }
+        if ($status === $fromStatus) {
+            Response::json(['ok' => true, 'lead' => $lead]);
+        }
+
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            if (!Lead::moveToStatus((int) $id, $fromStatus, $status, $user->id)) {
+                $pdo->rollBack();
+                Response::json(['ok' => false, 'message' => 'Лид уже изменён. Обновите страницу и повторите действие.'], 409);
+            }
+            $updatedLead = Lead::find((int) $id);
+            $assignee = User::find((int) ($lead['assigned_to'] ?? 0));
+            ActivityLog::record('lead.stage_changed', 'Изменён этап лида', $user, $assignee ? [$assignee] : [], 'lead', (int) $id, [
+                'name' => Lead::displayName($lead),
+                'from_status' => $fromStatus,
+                'to_status' => $status,
+                'direction' => $lead['direction'],
+                'changes' => ActivityLog::changes(
+                    ['status' => Lead::STATUSES[$fromStatus]],
+                    ['status' => Lead::STATUSES[$status]],
+                    ['status' => 'Этап']
+                ),
+            ]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        Response::json(['ok' => true, 'lead' => $updatedLead]);
     }
 
     public function archive(string $id): void

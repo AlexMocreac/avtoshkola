@@ -135,6 +135,26 @@ try {
     $lookup->execute(['email' => 'http.lead.' . $suffix . '@example.test']);
     $leadId = (int) $lookup->fetchColumn();
 
+    $moveUrl = $baseUrl . '/crm/leads/' . $leadId . '/status';
+    expectStatus(httpCall('POST', $moveUrl, $cookieFile, ['status' => 'contacted', 'from_status' => 'target']), 419, 'lead-move-csrf');
+    expectStatus(httpCall('POST', $moveUrl, $cookieFile, ['_token' => $token, 'status' => 'unknown', 'from_status' => 'target']), 422, 'lead-move-invalid-status');
+    expectStatus(httpCall('POST', $moveUrl, $cookieFile, ['_token' => $token, 'status' => ['target'], 'from_status' => 'target']), 422, 'lead-move-invalid-payload');
+    $move = httpCall('POST', $moveUrl, $cookieFile, ['_token' => $token, 'status' => 'contacted', 'from_status' => 'target']);
+    expectStatus($move, 200, 'lead-move');
+    $movedLead = json_decode($move['body'], true, 512, JSON_THROW_ON_ERROR)['lead'];
+    if ($movedLead['status'] !== 'contacted' || $movedLead['direction'] !== 'dpo'
+        || $movedLead['email'] !== 'http.lead.' . $suffix . '@example.test' || (int) $movedLead['assigned_to'] !== $userId) {
+        throw new RuntimeException('Moving a lead failed or changed unrelated lead fields.');
+    }
+    expectStatus(httpCall('POST', $moveUrl, $cookieFile, ['_token' => $token, 'status' => 'refused', 'from_status' => 'target']), 409, 'lead-move-stale-stage');
+    expectStatus(httpCall('POST', $moveUrl, $cookieFile, ['_token' => $token, 'status' => 'contacted', 'from_status' => 'contacted']), 200, 'lead-move-same-stage');
+    $moveHistory = httpCall('GET', $baseUrl . '/crm/leads/' . $leadId . '/history', $cookieFile);
+    $moveEvents = json_decode($moveHistory['body'], true, 512, JSON_THROW_ON_ERROR)['events'];
+    $stageEvents = array_values(array_filter($moveEvents, static fn (array $event): bool => $event['title'] === 'Изменён этап лида'));
+    if (count($stageEvents) !== 1 || !str_contains($stageEvents[0]['description'], 'Целевой') || !str_contains($stageEvents[0]['description'], 'Связались')) {
+        throw new RuntimeException('Moving a lead must record exactly one history event with the old and new stages.');
+    }
+
     $uploadTempFiles = [tempnam(sys_get_temp_dir(), 'contract-pdf-'), tempnam(sys_get_temp_dir(), 'contract-txt-')];
     file_put_contents($uploadTempFiles[0], "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
     file_put_contents($uploadTempFiles[1], "Приложение к договору {$suffix}\n");

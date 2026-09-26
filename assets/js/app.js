@@ -951,6 +951,269 @@
         openDialog(qs('#contractModal'));
     }
 
+    // A pointer preview keeps the card crisp and supports touch as well as a mouse.
+    qsa('[data-lead-board]').forEach((board) => {
+        board.classList.add('is-draggable');
+        const columns = qsa('[data-lead-status]', board);
+        const announcement = qs('[data-lead-drag-announcement]');
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        let pending = null;
+        let dragging = null;
+        let frame = 0;
+        let suppressClickUntil = 0;
+
+        function announce(message) {
+            if (announcement) announcement.textContent = message;
+        }
+
+        function refreshColumns() {
+            columns.forEach((column) => {
+                const content = qs('.lead-column__body', column);
+                const count = qsa('.lead-kanban-card', content).length;
+                qs('.lead-column__header b', column).textContent = String(count);
+                let empty = qs('.lead-column__empty', content);
+                if (!empty) {
+                    empty = document.createElement('p');
+                    empty.className = 'lead-column__empty';
+                    empty.textContent = 'Пока пусто';
+                    content.append(empty);
+                }
+                empty.classList.toggle('is-hidden', count > 0);
+            });
+        }
+
+        function selectColumn(column) {
+            if (!dragging || dragging.target === column) return;
+            dragging.target = column;
+            columns.forEach((item) => {
+                const selected = item === column;
+                item.classList.toggle('is-drop-target', selected);
+                qs('[data-drop-label]', item).textContent = item === dragging.source
+                    ? 'Оставить на этом этапе'
+                    : selected ? 'Отпустите, чтобы переместить' : 'Перетащите сюда';
+            });
+            if (column) announce(`Этап «${column.dataset.statusTitle}». ${dragging.keyboard ? 'Enter — переместить, Escape — отменить.' : 'Отпустите карточку для перемещения.'}`);
+        }
+
+        function columnAtPointer() {
+            const element = document.elementFromPoint(dragging.x, dragging.y);
+            const column = element?.closest('[data-lead-status]');
+            return column && board.contains(column) ? column : null;
+        }
+
+        function renderDrag() {
+            if (!dragging || dragging.keyboard) return;
+            const drag = dragging;
+            drag.preview.style.transform = `translate3d(${drag.x - drag.offsetX}px, ${drag.y - drag.offsetY}px, 0) rotate(2deg) scale(1.025)`;
+            const rect = board.getBoundingClientRect();
+            const left = Math.max(rect.left, 0);
+            const right = Math.min(rect.right, window.innerWidth);
+            // Keep off-screen stages reachable while holding a card at the board edge.
+            if (drag.y >= rect.top && drag.y <= rect.bottom && drag.x >= left - 20 && drag.x <= right + 20) {
+                const edge = 56;
+                const velocity = drag.x < left + edge ? -Math.min(1, (left + edge - drag.x) / edge)
+                    : drag.x > right - edge ? Math.min(1, (drag.x - right + edge) / edge) : 0;
+                board.scrollLeft += velocity * 12;
+            }
+            if (drag.x >= left && drag.x <= right) {
+                const edge = 64;
+                const velocity = drag.y < edge ? -Math.max(0, (edge - drag.y) / edge)
+                    : drag.y > window.innerHeight - edge ? Math.max(0, (drag.y - window.innerHeight + edge) / edge) : 0;
+                if (velocity) window.scrollBy({ top: Math.max(-12, Math.min(12, velocity * 12)), behavior: 'instant' });
+            }
+            selectColumn(columnAtPointer());
+            frame = window.requestAnimationFrame(renderDrag);
+        }
+
+        function beginDrag(card, pointer = null) {
+            const rect = card.getBoundingClientRect();
+            const source = card.closest('[data-lead-status]');
+            const handle = qs('[data-lead-drag-handle]', card);
+            dragging = {
+                card, source, handle, target: null, keyboard: !pointer,
+                sourceBody: card.parentElement, next: card.nextSibling,
+                scrollTops: columns.map((column) => qs('.lead-column__body', column).scrollTop),
+                pointerId: pointer?.pointerId, x: pointer?.x, y: pointer?.y,
+                offsetX: pointer ? pointer.startX - rect.left : 0,
+                offsetY: pointer ? pointer.startY - rect.top : 0,
+            };
+            if (pointer) {
+                const preview = card.cloneNode(true);
+                preview.removeAttribute('id');
+                qsa('[id]', preview).forEach((element) => element.removeAttribute('id'));
+                preview.classList.add('lead-kanban-card--preview');
+                preview.style.width = `${rect.width}px`;
+                preview.setAttribute('aria-hidden', 'true');
+                preview.inert = true;
+                body.append(preview);
+                dragging.preview = preview;
+                handle.setPointerCapture(pointer.pointerId);
+            }
+            board.style.setProperty('--lead-slot-height', `${Math.max(130, Math.min(rect.height, 210))}px`);
+            board.classList.add('is-dragging');
+            body.classList.add('is-dragging-lead');
+            card.classList.add('is-dragging');
+            handle.setAttribute('aria-pressed', 'true');
+            columns.forEach((column) => { qs('.lead-column__body', column).scrollTop = 0; });
+            selectColumn(source);
+            if (pointer) renderDrag();
+        }
+
+        function settlePreview(preview, card) {
+            if (!preview) return;
+            if (reducedMotion.matches || !preview.animate) {
+                preview.remove();
+                return;
+            }
+            const rect = card.getBoundingClientRect();
+            preview.animate([
+                { transform: preview.style.transform, opacity: 1 },
+                { transform: `translate3d(${rect.left}px, ${rect.top}px, 0) rotate(0) scale(1)`, opacity: 0 },
+            ], { duration: 190, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished.finally(() => preview.remove());
+        }
+
+        async function saveMove(drag, destination) {
+            const { card, sourceBody, next, source, handle } = drag;
+            const content = qs('.lead-column__body', destination);
+            qs('.lead-drop-slot', content).after(card);
+            content.scrollTop = 0;
+            card.classList.add('is-saving');
+            card.setAttribute('aria-busy', 'true');
+            card.inert = true;
+            refreshColumns();
+            settlePreview(drag.preview, card);
+            announce(`Сохраняем этап «${destination.dataset.statusTitle}»…`);
+            try {
+                const data = await request(path(`/crm/leads/${card.dataset.leadId}/status`), {
+                    method: 'POST',
+                    body: new URLSearchParams({ status: destination.dataset.leadStatus, from_status: source.dataset.leadStatus }),
+                });
+                qs('[data-record-edit="lead"]', card).dataset.record = JSON.stringify(data.lead);
+                qs('[data-lead-contract]', card).classList.toggle('is-hidden', ['contract', 'refused'].includes(data.lead.status));
+                const message = `Лид перемещён на этап «${destination.dataset.statusTitle}».`;
+                announce(message);
+                toast(message);
+            } catch (error) {
+                sourceBody.insertBefore(card, next?.parentElement === sourceBody ? next : null);
+                sourceBody.scrollTop = drag.scrollTops[columns.indexOf(source)];
+                refreshColumns();
+                announce(error.message);
+                toast(error.message, 'error');
+            } finally {
+                card.classList.remove('is-saving');
+                card.removeAttribute('aria-busy');
+                card.inert = false;
+                if (drag.keyboard) handle.focus({ preventScroll: true });
+            }
+        }
+
+        function finishDrag(commit = false) {
+            pending = null;
+            if (!dragging) return;
+            const drag = dragging;
+            dragging = null;
+            window.cancelAnimationFrame(frame);
+            suppressClickUntil = performance.now() + 350;
+            board.classList.remove('is-dragging');
+            board.style.removeProperty('--lead-slot-height');
+            body.classList.remove('is-dragging-lead');
+            drag.card.classList.remove('is-dragging');
+            drag.handle.setAttribute('aria-pressed', 'false');
+            columns.forEach((column, index) => {
+                column.classList.remove('is-drop-target');
+                qs('.lead-column__body', column).scrollTop = drag.scrollTops[index];
+            });
+            if (drag.pointerId !== undefined && drag.handle.hasPointerCapture(drag.pointerId)) {
+                drag.handle.releasePointerCapture(drag.pointerId);
+            }
+            if (commit && drag.target && drag.target !== drag.source) {
+                void saveMove(drag, drag.target);
+            } else {
+                settlePreview(drag.preview, drag.card);
+                announce('Перемещение отменено.');
+                if (drag.keyboard) drag.handle.focus({ preventScroll: true });
+            }
+        }
+
+        board.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0 || !event.isPrimary || dragging) return;
+            const card = event.target.closest('.lead-kanban-card');
+            const handle = event.target.closest('[data-lead-drag-handle]');
+            if (!card || card.classList.contains('is-saving')) return;
+            if (!handle && (event.pointerType !== 'mouse' || event.target.closest('button, a, input, select, textarea, form'))) return;
+            event.preventDefault();
+            pending = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY };
+        });
+        document.addEventListener('pointermove', (event) => {
+            if (pending && pending.pointerId === event.pointerId) {
+                pending.x = event.clientX;
+                pending.y = event.clientY;
+                if (Math.hypot(pending.x - pending.startX, pending.y - pending.startY) < 6) return;
+                beginDrag(pending.card, pending);
+                pending = null;
+            }
+            if (!dragging || dragging.pointerId !== event.pointerId) return;
+            event.preventDefault();
+            dragging.x = event.clientX;
+            dragging.y = event.clientY;
+        }, { passive: false });
+        document.addEventListener('pointerup', (event) => {
+            if (pending?.pointerId === event.pointerId) pending = null;
+            if (!dragging || dragging.pointerId !== event.pointerId) return;
+            dragging.x = event.clientX;
+            dragging.y = event.clientY;
+            selectColumn(columnAtPointer());
+            finishDrag(true);
+        });
+        document.addEventListener('pointercancel', (event) => {
+            if (pending?.pointerId === event.pointerId || dragging?.pointerId === event.pointerId) finishDrag();
+        });
+        board.addEventListener('lostpointercapture', (event) => {
+            // Touch may first capture an SVG dot, then transfer capture to its button.
+            if (dragging?.pointerId === event.pointerId && event.target === dragging.handle) finishDrag();
+        });
+        board.addEventListener('dragstart', (event) => {
+            if (event.target.closest('.lead-kanban-card')) event.preventDefault();
+        });
+        board.addEventListener('click', (event) => {
+            if (performance.now() < suppressClickUntil) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            const handle = event.target.closest('[data-lead-drag-handle]');
+            if (handle && !dragging) beginDrag(handle.closest('.lead-kanban-card'));
+            else if (dragging?.keyboard && event.target.closest('.lead-drop-slot')) {
+                selectColumn(event.target.closest('[data-lead-status]'));
+                finishDrag(true);
+            }
+        }, true);
+        document.addEventListener('keydown', (event) => {
+            const handle = event.target.closest('[data-lead-drag-handle]');
+            if (!dragging && handle && board.contains(handle) && ['Enter', ' '].includes(event.key)) {
+                event.preventDefault();
+                if (!event.repeat) beginDrag(handle.closest('.lead-kanban-card'));
+                return;
+            }
+            if (event.key === 'Escape' && (dragging || pending)) {
+                event.preventDefault();
+                finishDrag();
+                return;
+            }
+            if (!dragging?.keyboard) return;
+            if (['ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Tab'].includes(event.key)) event.preventDefault();
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                const index = columns.indexOf(dragging.target);
+                const column = columns[Math.max(0, Math.min(columns.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)))];
+                selectColumn(column);
+                column.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion.matches ? 'instant' : 'smooth' });
+            } else if (event.key === 'Enter' || event.key === ' ') finishDrag(true);
+            else if (event.key === 'Tab') finishDrag();
+        });
+        window.addEventListener('blur', () => finishDrag());
+        document.addEventListener('visibilitychange', () => { if (document.hidden) finishDrag(); });
+    });
+
     // Client card and CRM history are loaded only when requested.
     const leadDetailsModal = qs('#leadDetailsModal');
     async function openLeadDetails(leadId) {

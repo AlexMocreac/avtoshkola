@@ -484,6 +484,31 @@ img, svg { display: block; }
 .lead-kanban-card { margin-bottom: 8px; padding: 12px; border: 1px solid #e1e5ee; border-radius: 12px; background: #fff; box-shadow: 0 5px 14px rgba(18,27,52,.035); }.lead-kanban-card:last-child { margin-bottom: 0; }.lead-kanban-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .lead-person { min-width: 0; padding: 0; color: var(--ink); border: 0; background: transparent; display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; }.lead-person > span:last-child { min-width: 0; display: flex; flex-direction: column; }.lead-person strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.lead-person small { margin-top: 3px; color: var(--muted); overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .lead-kanban-card__number { color: #a4a8b1; font-size: 7px; }.lead-kanban-card__contacts, .lead-kanban-card__meta { margin-top: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }.lead-kanban-card__contacts a, .lead-kanban-card__meta span { max-width: 100%; color: var(--muted-dark); display: flex; align-items: center; gap: 5px; overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }.lead-kanban-card__contacts a:hover { color: var(--accent-deep); }.lead-kanban-card__meta { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+.lead-kanban-card__tools { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 4px; }
+.lead-drag-handle { width: 26px; height: 28px; padding: 0; color: #9aa5ba; border: 0; border-radius: 7px; background: transparent; display: none; align-items: center; justify-content: center; cursor: grab; touch-action: none; transition: color 160ms, background 160ms; }
+.is-draggable .lead-drag-handle { display: inline-flex; }
+.lead-drag-handle:hover, .lead-drag-handle[aria-pressed="true"] { color: var(--accent-deep); background: var(--accent-soft); }
+.lead-drag-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-draggable .lead-kanban-card { position: relative; cursor: grab; transition: border-color 180ms, box-shadow 180ms, opacity 180ms; }
+.is-draggable .lead-kanban-card:hover { border-color: #c8d2ef; box-shadow: 0 7px 20px rgba(37,55,109,.09); }
+.lead-board .lead-kanban-card.is-dragging { opacity: .28; border: 1px dashed #8e9fc9; box-shadow: none; }
+.is-dragging-lead, .is-dragging-lead * { cursor: grabbing !important; user-select: none !important; }
+.lead-kanban-card--preview { position: fixed; z-index: 1000; top: 0; left: 0; margin: 0; pointer-events: none; border-color: #97abed; box-shadow: 0 24px 55px rgba(33,52,105,.24), 0 7px 18px rgba(33,52,105,.12); transform-origin: center; will-change: transform; }
+.lead-kanban-card--preview .lead-drag-handle { display: inline-flex; color: var(--accent); background: var(--accent-soft); }
+.lead-drop-slot { min-height: var(--lead-slot-height, 160px); margin-bottom: 8px; padding: 18px 10px; color: #7a89ad; border: 2px dashed #bac6e0; border-radius: 12px; background: linear-gradient(145deg, #f8faff, #edf1fa); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; position: sticky; z-index: 2; top: 0; text-align: center; transition: color 160ms, border-color 160ms, background 160ms, box-shadow 160ms; }
+.lead-drop-slot__icon { width: 36px; height: 36px; border: 1px solid #d9e1f1; border-radius: 50%; background: #fff; display: grid; place-items: center; transition: transform 160ms, color 160ms, background 160ms; }
+.lead-drop-slot strong { font-size: 10px; font-weight: 750; }.lead-drop-slot > span:last-child { font-size: 9px; opacity: .8; }
+.lead-board.is-dragging .lead-drop-slot { display: flex; animation: lead-slot-appear 180ms ease-out both; }
+.lead-board.is-dragging .lead-column__empty { display: none; }
+.lead-column { transition: border-color 160ms, background 160ms; }
+.lead-column.is-drop-target { border-color: #93a8e9; background: #e7edff; }
+.lead-column.is-drop-target .lead-drop-slot { color: var(--accent-deep); border-color: var(--accent); background: linear-gradient(145deg, #edf2ff, #dce6ff); box-shadow: inset 0 0 0 3px rgba(71,104,219,.07), 0 5px 14px rgba(71,104,219,.12); }
+.lead-column.is-drop-target .lead-drop-slot__icon { color: #fff; border-color: var(--accent); background: var(--accent); transform: scale(1.1); }
+.lead-column.is-drop-target .lead-column__header b { color: var(--accent-deep); background: #fff; }
+.lead-kanban-card.is-saving { opacity: .65; cursor: progress; }
+.lead-kanban-card.is-saving::after { content: "Сохраняем…"; padding: 5px 9px; color: #fff; border-radius: 8px; background: var(--accent); position: absolute; right: 8px; bottom: 8px; font-size: 9px; box-shadow: 0 3px 10px rgba(71,104,219,.2); }
+@keyframes lead-slot-appear { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+@media (pointer: coarse) { .lead-drag-handle { width: 36px; height: 40px; } }
 .lead-kanban-card__actions { margin-top: 10px; display: flex; align-items: center; gap: 5px; }.lead-kanban-card__actions form { margin: 0; }.lead-kanban-card__actions .icon-button { width: 30px; height: 30px; border-radius: 9px; }.lead-kanban-card__actions .button--contract { min-width: 0; margin-left: auto; padding: 0 9px; color: var(--accent-deep); border: 1px solid #d7dffd; background: var(--accent-soft); box-shadow: none; }
 
 .lead-details-modal .modal__surface { min-height: min(650px, calc(100vh - 40px)); }.lead-details { display: flex; flex: 1; flex-direction: column; }.lead-details__summary { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }.lead-details__summary > div { min-width: 0; min-height: 59px; padding: 10px 12px; border-radius: 11px; background: var(--surface-soft); display: flex; flex-direction: column; }.lead-details__summary small { color: var(--muted); font-size: 8px; }.lead-details__summary strong, .lead-details__summary a { margin-top: 5px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.lead-details__summary a { color: var(--accent-deep); }

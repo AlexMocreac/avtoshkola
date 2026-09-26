@@ -48,11 +48,17 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                         <span class="nav-item__icon"><?= icon('activity') ?></span>
                         <span class="nav-item__label">Лента событий</span>
                     </a>
-                    <a class="nav-item <?= is_active_route('/warnings') ? 'is-active' : '' ?>" href="<?= e(url('/warnings')) ?>">
+                    <?php if ($currentUser->canUseTasks()): ?>
+                        <a class="nav-item <?= is_active_route('/tasks') ? 'is-active' : '' ?>" href="<?= e(url('/tasks')) ?>">
+                            <span class="nav-item__icon"><?= icon('check-square') ?></span>
+                            <span class="nav-item__label">Задачи</span>
+                        </a>
+                    <?php endif; ?>
+                    <!-- <a class="nav-item <?= is_active_route('/warnings') ? 'is-active' : '' ?>" href="<?= e(url('/warnings')) ?>">
                         <span class="nav-item__icon"><?= icon('bell') ?></span>
                         <span class="nav-item__label">Предупреждения</span>
                         <span class="nav-item__badge <?= $layoutWarnings === 0 ? 'is-hidden' : '' ?>"><?= $layoutWarnings ?></span>
-                    </a>
+                    </a> -->
                     <p class="nav-label nav-label--section">CRM</p>
                     <a class="nav-item <?= is_active_route('/crm/leads') ? 'is-active' : '' ?>" href="<?= e(url('/crm/leads')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
@@ -61,12 +67,6 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     <a class="nav-item <?= is_active_route('/crm/contracts') ? 'is-active' : '' ?>" href="<?= e(url('/crm/contracts')) ?>">
                         <span class="nav-item__icon"><?= icon('file') ?></span>
                         <span class="nav-item__label">Договоры</span>
-                    </a>
-                <?php endif; ?>
-                <?php if ($currentUser->canUseTasks()): ?>
-                    <a class="nav-item <?= is_active_route('/tasks') ? 'is-active' : '' ?>" href="<?= e(url('/tasks')) ?>">
-                        <span class="nav-item__icon"><?= icon('check-square') ?></span>
-                        <span class="nav-item__label">Задачи</span>
                     </a>
                 <?php endif; ?>
                 <?php if ($currentUser->canManageUsers()): ?>

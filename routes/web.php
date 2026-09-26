@@ -38,6 +38,7 @@ $router->get('/crm/leads', [LeadController::class, 'index']);
 $router->get('/crm/leads/{id}/history', [LeadController::class, 'history']);
 $router->post('/crm/leads', [LeadController::class, 'create']);
 $router->post('/crm/leads/{id}/update', [LeadController::class, 'update']);
+$router->post('/crm/leads/{id}/status', [LeadController::class, 'status']);
 $router->post('/crm/leads/{id}/archive', [LeadController::class, 'archive']);
 $router->get('/crm/contracts', [ContractController::class, 'index']);
 $router->get('/crm/contracts/files/{id}', [ContractController::class, 'download']);
