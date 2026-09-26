@@ -376,7 +376,11 @@
     function applySidebarForViewport() {
         if (!shell) return;
         if (window.innerWidth > 960) {
-            shell.classList.toggle('is-collapsed', localStorage.getItem('crm-sidebar-collapsed') === '1');
+            try {
+                shell.classList.toggle('is-collapsed', localStorage.getItem('crm-sidebar-collapsed') === '1');
+            } catch (_) {
+                // Keep navigation and settings usable when browser storage is unavailable.
+            }
             shell.classList.remove('is-mobile-open');
         } else {
             shell.classList.remove('is-collapsed');
@@ -387,7 +391,11 @@
     applySidebarForViewport();
     sidebarCollapse?.addEventListener('click', () => {
         shell.classList.toggle('is-collapsed');
-        localStorage.setItem('crm-sidebar-collapsed', shell.classList.contains('is-collapsed') ? '1' : '0');
+        try {
+            localStorage.setItem('crm-sidebar-collapsed', shell.classList.contains('is-collapsed') ? '1' : '0');
+        } catch (_) {
+            // The menu still works for the current page without persistence.
+        }
         syncSidebarToggle();
     });
     mobileMenu?.addEventListener('click', () => shell.classList.add('is-mobile-open'));

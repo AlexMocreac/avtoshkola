@@ -13,6 +13,7 @@ $flashes = Flash::pull();
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="theme-color" content="#4768db">
     <title><?= e($pageTitle ?? 'Автошкола') ?> · <?= e(env('APP_NAME', 'Автошкола ЦОВ')) ?></title>
+    <script src="<?= e(asset('js/appearance.js')) ?>"></script>
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
 </head>
 <body class="auth-body" data-base-url="<?= e(base_path()) ?>">

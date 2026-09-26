@@ -19,6 +19,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="theme-color" content="#4768db">
     <title><?= e($pageTitle ?? 'CRM') ?> · <?= e(env('APP_NAME', 'Автошкола ЦОВ')) ?></title>
+    <script src="<?= e(asset('js/appearance.js')) ?>"></script>
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
 </head>
 <body class="app-body" data-base-url="<?= e(base_path()) ?>" data-user-id="<?= $currentUser->id ?>">
@@ -96,6 +97,10 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     </span>
                     <span class="user-mini__arrow"><?= icon('chevron-right', 16) ?></span>
                 </a>
+                <button class="nav-item nav-item--button" type="button" data-dialog-open="settingsModal" aria-haspopup="dialog" aria-controls="settingsModal" aria-label="Настройки" title="Настройки">
+                    <span class="nav-item__icon"><?= icon('settings') ?></span>
+                    <span class="nav-item__label">Настройки</span>
+                </button>
                 <form method="post" action="<?= e(url('/logout')) ?>" class="sidebar__logout">
                     <?= csrf_field() ?>
                     <button class="nav-item nav-item--button" type="submit">
@@ -145,6 +150,8 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
             </div>
         </main>
     </div>
+
+    <?php require __DIR__ . '/_settings.php'; ?>
 
     <div class="toast-stack" id="toastStack" aria-live="polite">
         <?php foreach ($flashes as $flash): ?>
