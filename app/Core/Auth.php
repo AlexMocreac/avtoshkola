@@ -103,6 +103,33 @@ final class Auth
         return $user;
     }
 
+    public static function requireEducationAccess(): User
+    {
+        $user = self::requireLogin();
+        if (!$user->canUseEducation()) {
+            self::deny($user, 'Недостаточно прав для доступа к разделу обучения.');
+        }
+        return $user;
+    }
+
+    public static function requireEducationManager(): User
+    {
+        $user = self::requireLogin();
+        if (!$user->canManageEducation()) {
+            self::deny($user, 'Недостаточно прав для управления учебными классами.');
+        }
+        return $user;
+    }
+
+    public static function requireKassaManager(): User
+    {
+        $user = self::requireLogin();
+        if (!$user->canManageKassas()) {
+            self::deny($user, 'Управлять кассами могут только директор и заместитель директора.');
+        }
+        return $user;
+    }
+
     private static function deny(User $user, string $message): never
     {
         if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {

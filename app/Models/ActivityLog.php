@@ -307,6 +307,15 @@ final class ActivityLog
         if ($type === 'deadline') {
             return '/warnings#deadline-' . $id;
         }
+        if ($type === 'class') {
+            return '/education/classes/' . $id;
+        }
+        if ($type === 'kassa') {
+            return '/education/kassas';
+        }
+        if ($type === 'service') {
+            return '/education/services';
+        }
         return $type === 'conversation' ? '/chat' : null;
     }
 
@@ -315,8 +324,10 @@ final class ActivityLog
         if (!$id) {
             return null;
         }
-        $path = $roleTitle === User::ROLES[User::ROLE_STUDENT] || $roleTitle === User::ROLE_STUDENT ? '/students' : '/staff';
-        return $path . '#user-' . $id;
+        if ($roleTitle === User::ROLES[User::ROLE_STUDENT] || $roleTitle === User::ROLE_STUDENT) {
+            return '/education/students/' . $id;
+        }
+        return '/staff#user-' . $id;
     }
 
     private static function displayValue(mixed $value): string

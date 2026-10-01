@@ -14,7 +14,7 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
 
 <?php if ($currentUser->canUseCrm()): ?>
     <section class="metric-grid metric-grid--four stagger-group">
-        <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--blue"><?= icon('user') ?></span><span class="trend">Активные</span></div><strong><?= $stats['students'] ?></strong><p><a href="<?= e(url('/students')) ?>">Курсанты</a></p></article>
+        <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--blue"><?= icon('user') ?></span><span class="trend">Активные</span></div><strong><?= $stats['students'] ?></strong><p><a href="<?= e(url('/education/students')) ?>">Курсанты</a></p></article>
         <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--green"><?= icon('users') ?></span><span class="trend">В воронке</span></div><strong><?= array_sum($leadStats) ?></strong><p><a href="<?= e(url('/crm/leads')) ?>">Клиенты и лиды</a></p></article>
         <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--orange"><?= icon('file') ?></span><span class="trend">Действуют</span></div><strong><?= $activeContracts ?></strong><p><a href="<?= e(url('/crm/contracts')) ?>">Договоры</a></p></article>
         <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--red"><?= icon('bell') ?></span><span class="trend">30 дней</span></div><strong><?= $warningCount ?></strong><p><a href="<?= e(url('/warnings')) ?>">Ближайшие сроки</a></p></article>

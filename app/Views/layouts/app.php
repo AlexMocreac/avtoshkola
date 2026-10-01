@@ -71,14 +71,47 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     </a>
                 <?php endif; ?>
                 <?php if ($currentUser->canManageUsers()): ?>
-                    <p class="nav-label nav-label--section">Пользователи</p>
+                    <p class="nav-label nav-label--section">Администрирование</p>
                     <a class="nav-item <?= is_active_route('/students') ? 'is-active' : '' ?>" href="<?= e(url('/students')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
-                        <span class="nav-item__label">Курсанты</span>
+                        <span class="nav-item__label">Учётные записи</span>
                     </a>
                     <a class="nav-item <?= is_active_route('/staff') ? 'is-active' : '' ?>" href="<?= e(url('/staff')) ?>">
                         <span class="nav-item__icon"><?= icon('shield') ?></span>
                         <span class="nav-item__label">Сотрудники</span>
+                    </a>
+                <?php endif; ?>
+                <?php if ($currentUser->canUseEducation()): ?>
+                    <p class="nav-label nav-label--section">Обучение</p>
+                    <a class="nav-item <?= is_active_route('/education/classes') ? 'is-active' : '' ?>" href="<?= e(url('/education/classes')) ?>">
+                        <span class="nav-item__icon"><?= icon('users') ?></span>
+                        <span class="nav-item__label">Учебные классы</span>
+                    </a>
+                    <a class="nav-item <?= is_active_route('/education/students') ? 'is-active' : '' ?>" href="<?= e(url('/education/students')) ?>">
+                        <span class="nav-item__icon"><?= icon('user') ?></span>
+                        <span class="nav-item__label">Карточки курсантов</span>
+                    </a>
+                    <?php if ($currentUser->canManageEducation()): ?>
+                        <a class="nav-item <?= is_active_route('/education/services') ? 'is-active' : '' ?>" href="<?= e(url('/education/services')) ?>">
+                            <span class="nav-item__icon"><?= icon('file') ?></span>
+                            <span class="nav-item__label">Услуги</span>
+                        </a>
+                    <?php endif; ?>
+                    <?php if ($currentUser->canManageKassas()): ?>
+                        <a class="nav-item <?= is_active_route('/education/kassas') ? 'is-active' : '' ?>" href="<?= e(url('/education/kassas')) ?>">
+                            <span class="nav-item__icon"><?= icon('grid') ?></span>
+                            <span class="nav-item__label">Кассы</span>
+                        </a>
+                    <?php endif; ?>
+                <?php endif; ?>
+                <a class="nav-item <?= is_active_route('/calendar') ? 'is-active' : '' ?>" href="<?= e(url('/calendar')) ?>">
+                    <span class="nav-item__icon"><?= icon('calendar') ?></span>
+                    <span class="nav-item__label">Календарь</span>
+                </a>
+                <?php if ($currentUser->isStudent()): ?>
+                    <a class="nav-item <?= is_active_route('/education/students/' . $currentUser->id) ? 'is-active' : '' ?>" href="<?= e(url('/education/students/' . $currentUser->id)) ?>">
+                        <span class="nav-item__icon"><?= icon('user') ?></span>
+                        <span class="nav-item__label">Моё обучение</span>
                     </a>
                 <?php endif; ?>
                 <a class="nav-item <?= is_active_route('/chat') ? 'is-active' : '' ?>" href="<?= e(url('/chat')) ?>">

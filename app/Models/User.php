@@ -237,10 +237,48 @@ final class User
         return !$this->isStudent();
     }
 
+    public function canUseEducation(): bool
+    {
+        return in_array($this->role, [
+            self::ROLE_ADMIN,
+            self::ROLE_TEACHER,
+            self::ROLE_DEPUTY_DIRECTOR,
+            self::ROLE_DIRECTOR,
+        ], true);
+    }
+
+    public function canManageEducation(): bool
+    {
+        return in_array($this->role, [self::ROLE_ADMIN, self::ROLE_DEPUTY_DIRECTOR, self::ROLE_DIRECTOR], true);
+    }
+
+    public function canManageKassas(): bool
+    {
+        return in_array($this->role, [self::ROLE_DEPUTY_DIRECTOR, self::ROLE_DIRECTOR], true);
+    }
+
+    public function canAcceptPayments(): bool
+    {
+        return in_array($this->role, [self::ROLE_ADMIN, self::ROLE_DEPUTY_DIRECTOR, self::ROLE_DIRECTOR], true);
+    }
+
+    public function canViewStudent(int $studentId): bool
+    {
+        return $this->canUseEducation() || ($this->isStudent() && $this->id === $studentId);
+    }
+
     public static function staff(): array
     {
         $stmt = Database::connection()->query(
             "SELECT * FROM users WHERE status = 'active' AND role <> 'student' ORDER BY last_name, first_name"
+        );
+        return array_map([self::class, 'fromRow'], $stmt->fetchAll());
+    }
+
+    public static function teachers(): array
+    {
+        $stmt = Database::connection()->query(
+            "SELECT * FROM users WHERE status = 'active' AND role IN ('teacher', 'instructor') ORDER BY last_name, first_name"
         );
         return array_map([self::class, 'fromRow'], $stmt->fetchAll());
     }

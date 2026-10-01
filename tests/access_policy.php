@@ -43,6 +43,14 @@ check($director->canUseCrm() && $deputy->canUseCrm() && $admin->canUseCrm(), 'Ma
 check(!$teacher->canUseCrm() && !$student->canUseCrm(), 'Non-management must not access CRM.');
 check($teacher->canUseTasks() && $instructor->canUseTasks(), 'Employees must access tasks.');
 check(!$student->canUseTasks(), 'Students must not access tasks.');
+check($admin->canUseEducation() && $teacher->canUseEducation() && $director->canUseEducation() && $deputy->canUseEducation(), 'Education roles must access Stage 3.');
+check(!$instructor->canUseEducation() && !$student->canUseEducation(), 'Instructor and student must not access staff education directory.');
+check($admin->canManageEducation() && $director->canManageEducation() && $deputy->canManageEducation(), 'Management must manage classes and student cards.');
+check(!$teacher->canManageEducation(), 'Teacher must have read-only education access.');
+check($director->canManageKassas() && $deputy->canManageKassas(), 'Director and deputy must manage kassas.');
+check(!$admin->canManageKassas() && !$teacher->canManageKassas(), 'Only director and deputy may manage kassas.');
+check($admin->canAcceptPayments() && $director->canAcceptPayments() && $deputy->canAcceptPayments(), 'Management must accept payments.');
+check(!$teacher->canAcceptPayments(), 'Teacher must not accept payments.');
 
 $input = [
     'login' => 'test.student',

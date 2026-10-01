@@ -94,6 +94,45 @@
 
     syncPhoneMasks();
 
+    function formatMoneyInputValue(value) {
+        const compact = String(value || '').replace(/[\s\u00a0]/g, '').replace(/[^\d.,]/g, '');
+        if (compact === '') return '';
+        const separatorIndex = compact.search(/[.,]/);
+        const integerSource = separatorIndex === -1 ? compact : compact.slice(0, separatorIndex);
+        const fractionSource = separatorIndex === -1 ? '' : compact.slice(separatorIndex + 1);
+        const integerDigits = integerSource.replace(/\D/g, '').slice(0, 10);
+        const fractionDigits = fractionSource.replace(/\D/g, '').slice(0, 2);
+        const integer = (integerDigits || '0').replace(/^0+(?=\d)/, '');
+        const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        return `${grouped}${separatorIndex === -1 ? '' : `,${fractionDigits}`}`;
+    }
+
+    function syncMoneyInputs(root = document) {
+        qsa('[data-money-input]', root).forEach((input) => {
+            input.value = formatMoneyInputValue(input.value);
+            if (input.dataset.moneyInputReady === '1') return;
+            input.dataset.moneyInputReady = '1';
+            input.addEventListener('input', () => {
+                const significantBeforeCursor = input.value
+                    .slice(0, input.selectionStart ?? input.value.length)
+                    .replace(/[^\d.,]/g, '').length;
+                input.value = formatMoneyInputValue(input.value);
+                let cursor = 0;
+                let significant = 0;
+                while (cursor < input.value.length && significant < significantBeforeCursor) {
+                    if (/[\d,]/.test(input.value[cursor])) significant++;
+                    cursor++;
+                }
+                input.setSelectionRange(cursor, cursor);
+            });
+            input.addEventListener('blur', () => {
+                input.value = formatMoneyInputValue(input.value).replace(/,$/, '');
+            });
+        });
+    }
+
+    syncMoneyInputs();
+
     function toast(message, type = 'success') {
         const stack = qs('#toastStack');
         if (!stack || !message) return;
@@ -273,6 +312,7 @@
 
     function openDatePopover(wrapper) {
         if (activeDatePicker && activeDatePicker !== wrapper) closeDatePopover();
+        closeTimePopover();
         activeDatePicker = wrapper;
         const withTime = wrapper.dataset.withTime === '1';
         const parsed = pickerDate(qs('[data-date-value]', wrapper).value) || new Date();
@@ -350,6 +390,138 @@
     window.addEventListener('resize', positionDatePopover);
     document.addEventListener('scroll', positionDatePopover, true);
     qsa('form').forEach((form) => form.addEventListener('reset', () => window.setTimeout(() => syncAllDatePickers(form))));
+
+    // Compact time picker used by weekly class schedules.
+    let activeTimePicker = null;
+    let selectedTimeHour = 9;
+    let selectedTimeMinute = 0;
+    const timePopover = document.createElement('div');
+    timePopover.className = 'time-popover is-hidden';
+    timePopover.setAttribute('role', 'dialog');
+    timePopover.setAttribute('aria-label', 'Выбор времени');
+    timePopover.innerHTML = `
+        <div class="time-popover__head">
+            <span class="time-popover__icon" aria-hidden="true"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+            <span><strong>Время занятия</strong><small>Укажите часы и минуты</small></span>
+        </div>
+        <div class="time-popover__controls">
+            <label>Часы<select data-time-hour aria-label="Часы"></select></label>
+            <b>:</b>
+            <label>Минуты<select data-time-minute aria-label="Минуты"></select></label>
+        </div>
+        <div class="time-popover__quick" aria-label="Быстрый выбор времени">
+            ${['08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'].map((time) => `<button type="button" data-quick-time="${time}">${time}</button>`).join('')}
+        </div>
+        <div class="time-popover__footer">
+            <button type="button" data-time-cancel>Отмена</button>
+            <button class="time-popover__apply" type="button" data-time-apply>Выбрать</button>
+        </div>`;
+
+    const timeHourSelect = qs('[data-time-hour]', timePopover);
+    const timeMinuteSelect = qs('[data-time-minute]', timePopover);
+    for (let value = 0; value < 24; value++) timeHourSelect.add(new Option(padNumber(value), String(value)));
+    for (let value = 0; value < 60; value++) timeMinuteSelect.add(new Option(padNumber(value), String(value)));
+
+    function normalizedTimeValue(value) {
+        const match = String(value || '').trim().match(/^([01]\d|2[0-3]):([0-5]\d)/);
+        return match ? `${match[1]}:${match[2]}` : '09:00';
+    }
+
+    function syncTimePicker(wrapper) {
+        const hidden = qs('[data-time-value]', wrapper);
+        const display = qs('[data-time-display]', wrapper);
+        if (!hidden || !display) return;
+        hidden.value = normalizedTimeValue(hidden.value);
+        display.textContent = hidden.value;
+    }
+
+    function syncAllTimePickers(root = document) {
+        qsa('[data-time-picker]', root).forEach(syncTimePicker);
+    }
+
+    function renderTimePicker() {
+        timeHourSelect.value = String(selectedTimeHour);
+        timeMinuteSelect.value = String(selectedTimeMinute);
+        const selectedValue = `${padNumber(selectedTimeHour)}:${padNumber(selectedTimeMinute)}`;
+        qsa('[data-quick-time]', timePopover).forEach((button) => button.classList.toggle('is-selected', button.dataset.quickTime === selectedValue));
+    }
+
+    function positionTimePopover() {
+        if (!activeTimePicker || timePopover.classList.contains('is-hidden')) return;
+        const rect = activeTimePicker.getBoundingClientRect();
+        const dialog = activeTimePicker.closest('dialog');
+        const hostRect = dialog?.getBoundingClientRect();
+        const width = Math.min(290, window.innerWidth - 20, hostRect ? hostRect.width - 20 : 290);
+        const estimatedHeight = 260;
+        const viewportLeft = Math.max(10, Math.min(rect.left, window.innerWidth - width - 10));
+        const viewportTop = rect.bottom + estimatedHeight > window.innerHeight && rect.top > estimatedHeight
+            ? Math.max(10, rect.top - estimatedHeight - 7)
+            : Math.min(window.innerHeight - 10, rect.bottom + 7);
+        timePopover.style.position = dialog ? 'absolute' : 'fixed';
+        timePopover.style.width = `${width}px`;
+        timePopover.style.left = `${dialog ? viewportLeft - hostRect.left : viewportLeft}px`;
+        timePopover.style.top = `${dialog ? viewportTop - hostRect.top : viewportTop}px`;
+    }
+
+    function openTimePopover(wrapper) {
+        const trigger = qs('[data-time-trigger]', wrapper);
+        if (!trigger || trigger.disabled) return;
+        closeDatePopover();
+        if (activeTimePicker && activeTimePicker !== wrapper) closeTimePopover();
+        activeTimePicker = wrapper;
+        const [hour, minute] = normalizedTimeValue(qs('[data-time-value]', wrapper)?.value).split(':').map(Number);
+        selectedTimeHour = hour;
+        selectedTimeMinute = minute;
+        const container = wrapper.closest('dialog') || document.body;
+        container.append(timePopover);
+        timePopover.classList.remove('is-hidden');
+        trigger.setAttribute('aria-expanded', 'true');
+        renderTimePicker();
+        positionTimePopover();
+        timeHourSelect.focus();
+    }
+
+    function closeTimePopover() {
+        if (activeTimePicker) qs('[data-time-trigger]', activeTimePicker)?.setAttribute('aria-expanded', 'false');
+        timePopover.classList.add('is-hidden');
+        activeTimePicker = null;
+    }
+
+    function commitTimePicker() {
+        if (!activeTimePicker) return;
+        const hidden = qs('[data-time-value]', activeTimePicker);
+        hidden.value = `${padNumber(selectedTimeHour)}:${padNumber(selectedTimeMinute)}`;
+        syncTimePicker(activeTimePicker);
+        hidden.dispatchEvent(new Event('change', { bubbles: true }));
+        closeTimePopover();
+    }
+
+    qsa('[data-time-picker]').forEach((wrapper) => {
+        syncTimePicker(wrapper);
+        qs('[data-time-trigger]', wrapper)?.addEventListener('click', () => openTimePopover(wrapper));
+    });
+    timeHourSelect.addEventListener('change', () => { selectedTimeHour = Number(timeHourSelect.value); renderTimePicker(); });
+    timeMinuteSelect.addEventListener('change', () => { selectedTimeMinute = Number(timeMinuteSelect.value); renderTimePicker(); });
+    timePopover.addEventListener('click', (event) => {
+        const quick = event.target.closest('[data-quick-time]');
+        if (quick) {
+            [selectedTimeHour, selectedTimeMinute] = quick.dataset.quickTime.split(':').map(Number);
+            renderTimePicker();
+        } else if (event.target.closest('[data-time-apply]')) {
+            selectedTimeHour = Number(timeHourSelect.value);
+            selectedTimeMinute = Number(timeMinuteSelect.value);
+            commitTimePicker();
+        } else if (event.target.closest('[data-time-cancel]')) {
+            closeTimePopover();
+        }
+    });
+    document.addEventListener('click', (event) => {
+        if (activeTimePicker && !activeTimePicker.contains(event.target) && !timePopover.contains(event.target)) closeTimePopover();
+    });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeTimePopover(); });
+    window.addEventListener('resize', positionTimePopover);
+    document.addEventListener('scroll', positionTimePopover, true);
+    qsa('form').forEach((form) => form.addEventListener('reset', () => window.setTimeout(() => syncAllTimePickers(form))));
 
     qsa('dialog').forEach((dialog) => {
         dialog.addEventListener('click', (event) => {
@@ -1478,15 +1650,96 @@
         }
     });
 
+    const studentTabs = qs('[data-student-tabs]');
+    if (studentTabs) {
+        const tabs = qsa('[data-student-tab]', studentTabs);
+        const panels = qsa('[data-student-tab-panel]');
+        const profileViews = qsa('[data-student-profile-view]');
+        const allowedTabs = tabs.map((tab) => tab.dataset.studentTab);
+
+        const tabFromHash = () => {
+            const hash = decodeURIComponent(window.location.hash.slice(1));
+            return allowedTabs.includes(hash) ? hash : 'main';
+        };
+
+        const activateStudentTab = (name, updateHistory = false) => {
+            const active = allowedTabs.includes(name) ? name : 'main';
+            tabs.forEach((tab) => {
+                const selected = tab.dataset.studentTab === active;
+                tab.classList.toggle('is-active', selected);
+                tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+                tab.tabIndex = selected ? 0 : -1;
+            });
+            panels.forEach((panel) => {
+                panel.hidden = !String(panel.dataset.studentTabPanel || '').split(/\s+/).includes(active);
+            });
+            profileViews.forEach((view) => {
+                view.hidden = view.dataset.studentProfileView !== active;
+            });
+            qsa('[data-student-active-tab]').forEach((input) => {
+                input.value = active === 'personal' ? 'personal' : 'main';
+            });
+            if (updateHistory && window.location.hash !== `#${active}`) {
+                window.history.pushState(null, '', `#${active}`);
+            }
+        };
+
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', (event) => {
+                event.preventDefault();
+                activateStudentTab(tab.dataset.studentTab, true);
+            });
+            tab.addEventListener('keydown', (event) => {
+                let nextIndex = null;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+                else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+                else if (event.key === 'Home') nextIndex = 0;
+                else if (event.key === 'End') nextIndex = tabs.length - 1;
+                if (nextIndex === null) return;
+                event.preventDefault();
+                tabs[nextIndex].focus();
+                activateStudentTab(tabs[nextIndex].dataset.studentTab, true);
+            });
+        });
+        window.addEventListener('hashchange', () => activateStudentTab(tabFromHash()));
+        activateStudentTab(tabFromHash());
+    }
+
     qsa('[data-file-input]').forEach((input) => {
         const summary = qs('[data-file-summary]', input.closest('.file-upload'));
         const defaultText = summary?.textContent || '';
         input.addEventListener('change', () => {
             if (!summary) return;
             const count = input.files?.length || 0;
-            summary.textContent = count === 0 ? defaultText : `Выбрано файлов: ${count}`;
+            summary.textContent = count === 0 ? defaultText : (count === 1 ? input.files[0].name : `Выбрано файлов: ${count}`);
         });
         input.form?.addEventListener('reset', () => window.setTimeout(() => { if (summary) summary.textContent = defaultText; }));
+    });
+
+    qsa('[data-schedule-toggle]').forEach((toggle) => {
+        const row = toggle.closest('.schedule-day');
+        const picker = qs('[data-time-picker]', row);
+        const time = qs('[data-time-value]', picker);
+        const trigger = qs('[data-time-trigger]', picker);
+        const sync = () => {
+            if (!picker || !time || !trigger) return;
+            time.disabled = !toggle.checked;
+            trigger.disabled = !toggle.checked;
+            picker.classList.toggle('is-disabled', !toggle.checked);
+            if (!toggle.checked && activeTimePicker === picker) closeTimePopover();
+        };
+        toggle.addEventListener('change', sync);
+        toggle.form?.addEventListener('reset', () => window.setTimeout(sync));
+        sync();
+    });
+
+    qsa('form[action$="/sales"]').forEach((form) => {
+        const service = qs('select[name="service_id"]', form);
+        const amount = qs('input[name="amount"]', form);
+        service?.addEventListener('change', () => {
+            const option = service.options[service.selectedIndex];
+            if (amount && option?.dataset.price) amount.value = option.dataset.price;
+        });
     });
 
     qsa('form[data-submit-loading]').forEach((form) => form.addEventListener('submit', (event) => {

@@ -85,6 +85,20 @@ function date_picker(
         . icon('calendar', 18) . '</button></div>';
 }
 
+function time_picker(
+    string $name,
+    ?string $value = '09:00',
+    bool $disabled = false,
+    string $ariaLabel = 'Выбрать время'
+): string {
+    $value = preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', (string) $value) ? (string) $value : '09:00';
+
+    return '<div class="time-picker' . ($disabled ? ' is-disabled' : '') . '" data-time-picker>'
+        . '<input type="hidden" name="' . e($name) . '" value="' . e($value) . '" data-time-value' . ($disabled ? ' disabled' : '') . '>'
+        . '<button class="time-picker__trigger" type="button" aria-label="' . e($ariaLabel) . '" aria-haspopup="dialog" aria-expanded="false" data-time-trigger' . ($disabled ? ' disabled' : '') . '>'
+        . '<span data-time-display>' . e($value) . '</span>' . icon('clock', 18) . '</button></div>';
+}
+
 function format_bytes(int $bytes): string
 {
     if ($bytes < 1024) {

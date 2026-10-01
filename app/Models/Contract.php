@@ -25,8 +25,9 @@ final class Contract
                 OR INSTR(LOWER(c.counterparty), LOWER(:search_counterparty)) > 0
                 OR INSTR(COALESCE(c.client_phone, ""), :search_phone) > 0
                 OR INSTR(LOWER(CONCAT_WS(" ", l.last_name, l.first_name, l.middle_name)), LOWER(:search_lead_name)) > 0
+                OR INSTR(LOWER(CONCAT_WS(" ", student.last_name, student.first_name, student.middle_name)), LOWER(:search_student_name)) > 0
                 OR INSTR(COALESCE(l.phone, ""), :search_lead_phone) > 0)';
-            foreach (['number', 'registration', 'counterparty', 'phone', 'lead_name', 'lead_phone'] as $key) {
+            foreach (['number', 'registration', 'counterparty', 'phone', 'lead_name', 'student_name', 'lead_phone'] as $key) {
                 $params['search_' . $key] = $search;
             }
         }
@@ -46,10 +47,12 @@ final class Contract
             'SELECT c.*, l.first_name AS lead_first_name, l.last_name AS lead_last_name, l.middle_name AS lead_middle_name,
                     l.company_name AS lead_company_name, l.phone AS lead_phone,
                     CONCAT_WS(" ", l.last_name, l.first_name, l.middle_name) AS lead_name,
-                    CONCAT_WS(" ", manager.last_name, manager.first_name) AS manager_name
+                    CONCAT_WS(" ", manager.last_name, manager.first_name) AS manager_name,
+                    CONCAT_WS(" ", student.last_name, student.first_name, student.middle_name) AS student_name
              FROM crm_contracts c
              LEFT JOIN crm_leads l ON l.id = c.lead_id
              LEFT JOIN users manager ON manager.id = l.assigned_to
+             LEFT JOIN users student ON student.id = c.student_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY c.signed_on DESC, c.id DESC'
         );
@@ -73,8 +76,8 @@ final class Contract
         }
         $stmt = Database::connection()->prepare(
             'INSERT INTO crm_contracts
-             (contract_number, registration_number, lead_id, counterparty, client_phone, subject, direction, signed_on, starts_on, ends_on, amount, status, notes, created_by, updated_by)
-             VALUES (:contract_number, :registration_number, :lead_id, :counterparty, :client_phone, :subject, :direction, :signed_on, :starts_on, :ends_on, :amount, :status, :notes, :created_by, :updated_by)'
+             (contract_number, registration_number, lead_id, student_id, counterparty, client_phone, subject, direction, signed_on, starts_on, ends_on, amount, status, notes, created_by, updated_by)
+             VALUES (:contract_number, :registration_number, :lead_id, :student_id, :counterparty, :client_phone, :subject, :direction, :signed_on, :starts_on, :ends_on, :amount, :status, :notes, :created_by, :updated_by)'
         );
         $stmt->execute($payload + ['created_by' => $userId, 'updated_by' => $userId]);
         $id = (int) Database::connection()->lastInsertId();
@@ -89,12 +92,15 @@ final class Contract
     public static function update(int $id, array $data, int $userId): void
     {
         $payload = self::payload($data);
+        if (!array_key_exists('student_id', $data)) {
+            $payload['student_id'] = self::find($id)['student_id'] ?? null;
+        }
         if ($payload['contract_number'] === '') {
             $payload['contract_number'] = self::automaticNumber($id, (string) $payload['signed_on']);
         }
         $stmt = Database::connection()->prepare(
             'UPDATE crm_contracts SET contract_number = :contract_number, registration_number = :registration_number,
-             lead_id = :lead_id, counterparty = :counterparty, client_phone = :client_phone,
+             lead_id = :lead_id, student_id = :student_id, counterparty = :counterparty, client_phone = :client_phone,
              subject = :subject, direction = :direction, signed_on = :signed_on, starts_on = :starts_on, ends_on = :ends_on,
              amount = :amount, status = :status, notes = :notes, updated_by = :updated_by
              WHERE id = :id AND deleted_at IS NULL'
@@ -134,6 +140,7 @@ final class Contract
             'contract_number' => trim((string) ($data['contract_number'] ?? '')),
             'registration_number' => self::nullable($data['registration_number'] ?? null),
             'lead_id' => (int) ($data['lead_id'] ?? 0) ?: null,
+            'student_id' => (int) ($data['student_id'] ?? 0) ?: null,
             'counterparty' => trim((string) ($data['counterparty'] ?? '')),
             'client_phone' => self::nullable($data['client_phone'] ?? null),
             'subject' => trim((string) ($data['subject'] ?? '')),
