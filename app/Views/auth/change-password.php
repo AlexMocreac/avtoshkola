@@ -1,6 +1,6 @@
 <main class="password-page">
     <div class="password-page__brand">
-        <span class="brand__mark"><span>Ц</span></span>
+        <span class="brand__mark"><?= brand_symbol() ?></span>
         <span><strong>Центр</strong><small>Обучения Вождению</small></span>
     </div>
     <section class="password-card">

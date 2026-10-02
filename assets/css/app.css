@@ -74,8 +74,8 @@ img, svg { display: block; }
 
 .brand { min-width: 0; display: flex; align-items: center; gap: 11px; transition: opacity var(--transition), width var(--transition); }
 .brand__mark { width: 39px; height: 39px; flex: 0 0 39px; color: #fff; border-radius: 12px; background: var(--accent); display: grid; place-items: center; position: relative; overflow: hidden; box-shadow: 0 6px 18px rgba(71, 104, 219, .24); }
-.brand__mark::after { content: ""; position: absolute; width: 24px; height: 24px; border: 2px solid currentColor; border-left-color: transparent; border-radius: 50%; transform: rotate(-35deg); }
-.brand__mark span { font-size: 0.875rem; font-weight: 900; transform: translateY(.5px); }
+.brand-symbol { display: block; overflow: visible; }
+.brand__mark .brand-symbol { width: 29px; height: 29px; }
 .brand__copy { min-width: 0; display: flex; flex-direction: column; line-height: 1; white-space: nowrap; }
 .brand__copy strong { font-size: 1.0625rem; font-weight: 850; letter-spacing: -.04em; }
 .brand__copy small { margin-top: 5px; color: var(--muted); font-size: 0.875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
@@ -221,8 +221,7 @@ img, svg { display: block; }
 .welcome-card p { max-width: 520px; margin: 0 0 23px; color: rgba(255, 255, 255, .52); font-size: 0.875rem; line-height: 1.6; }
 .welcome-card__visual { width: 360px; height: 100%; position: absolute; right: 0; top: 0; opacity: .9; }
 .road-sign { width: 98px; height: 98px; border: 2px solid rgba(255, 255, 255, .11); border-radius: 50%; display: grid; place-items: center; position: absolute; right: 110px; top: 52px; box-shadow: 0 0 0 18px rgba(255, 255, 255, .018), 0 0 0 38px rgba(255, 255, 255, .011); }
-.road-sign::before { content: ""; width: 66px; height: 66px; border: 3px solid rgba(255, 255, 255, .9); border-left-color: transparent; border-radius: 50%; transform: rotate(-35deg); position: absolute; }
-.road-sign span { color: #fff; font-size: 1.3125rem; font-weight: 900; }
+.road-sign .brand-symbol { width: 70px; height: 70px; color: rgba(255, 255, 255, .9); }
 .road-line { height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .1), transparent); position: absolute; transform: rotate(-25deg); }
 .road-line--one { width: 430px; right: -60px; bottom: 34px; }.road-line--two { width: 310px; right: -50px; bottom: 72px; }.road-line--three { width: 190px; right: -10px; bottom: 110px; }
 .metric-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }

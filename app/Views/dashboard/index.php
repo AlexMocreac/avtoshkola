@@ -9,7 +9,7 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
         <p><?= $currentUser->isStudent() ? 'Здесь вы можете связаться с сотрудниками автошколы и своим инструктором.' : 'Лиды, договоры, задачи и важные сроки собраны в одном рабочем пространстве.' ?></p>
         <a class="button button--light" href="<?= e(url($currentUser->canUseTasks() ? '/tasks' : '/chat')) ?>"><?= $currentUser->canUseTasks() ? 'Открыть задачи' : 'Открыть сообщения' ?> <?= icon('chevron-right', 17) ?></a>
     </div>
-    <div class="welcome-card__visual" aria-hidden="true"><div class="road-sign"><span>Ц</span></div><div class="road-line road-line--one"></div><div class="road-line road-line--two"></div><div class="road-line road-line--three"></div></div>
+    <div class="welcome-card__visual" aria-hidden="true"><div class="road-sign"><?= brand_symbol() ?></div><div class="road-line road-line--one"></div><div class="road-line road-line--two"></div><div class="road-line road-line--three"></div></div>
 </section>
 
 <?php if ($currentUser->canUseCrm()): ?>

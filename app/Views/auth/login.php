@@ -3,7 +3,7 @@
         <div class="auth-showcase__glow auth-showcase__glow--one"></div>
         <div class="auth-showcase__glow auth-showcase__glow--two"></div>
         <a class="brand brand--light" href="<?= e(url('/login')) ?>">
-            <span class="brand__mark"><span>Ц</span></span>
+            <span class="brand__mark"><?= brand_symbol() ?></span>
             <span class="brand__copy"><strong>Центр</strong><small>Обучения Вождению</small></span>
         </a>
 
@@ -31,7 +31,7 @@
     <section class="auth-panel">
         <div class="auth-card">
             <div class="auth-card__mobile-brand">
-                <span class="brand__mark"><span>Ц</span></span>
+                <span class="brand__mark"><?= brand_symbol() ?></span>
                 <span><strong>Центр</strong><small>Обучения Вождению</small></span>
             </div>
             <p class="page-eyebrow">Личный кабинет</p>

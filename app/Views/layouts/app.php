@@ -27,7 +27,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
         <aside class="sidebar" id="sidebar" aria-label="Основная навигация">
             <div class="sidebar__header">
                 <a class="brand" href="<?= e(url('/dashboard')) ?>" aria-label="Центр Обучения Вождению">
-                    <span class="brand__mark"><span>Ц</span></span>
+                    <span class="brand__mark"><?= brand_symbol() ?></span>
                     <span class="brand__copy">
                         <strong>Центр</strong>
                         <small>Обучения Вождению</small>

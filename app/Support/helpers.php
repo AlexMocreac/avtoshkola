@@ -116,6 +116,14 @@ function is_active_route(string $prefix): bool
     return $path === $prefix || ($prefix !== '/' && str_starts_with($path, rtrim($prefix, '/') . '/'));
 }
 
+function brand_symbol(): string
+{
+    return '<svg class="brand-symbol" viewBox="0 0 40 40" fill="none" aria-hidden="true">'
+        . '<circle cx="20" cy="20" r="14.5" stroke="currentColor" stroke-width="2.25"/>'
+        . '<path d="M13.75 13.75v11.8h12.5v-11.8M26.25 25.55v3.2" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>'
+        . '</svg>';
+}
+
 function icon(string $name, int $size = 20): string
 {
     $paths = [
