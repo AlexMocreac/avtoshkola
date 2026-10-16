@@ -92,6 +92,18 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                         <span class="nav-item__label">Карточки курсантов</span>
                     </a>
                     <?php if ($currentUser->canManageEducation()): ?>
+                        <a class="nav-item <?= is_active_route('/education/programs') ? 'is-active' : '' ?>" href="<?= e(url('/education/programs')) ?>">
+                            <span class="nav-item__icon"><?= icon('book-open') ?></span>
+                            <span class="nav-item__label">Учебные программы</span>
+                        </a>
+                        <a class="nav-item <?= is_active_route('/education/checkpoints') ? 'is-active' : '' ?>" href="<?= e(url('/education/checkpoints')) ?>">
+                            <span class="nav-item__icon"><?= icon('check-square') ?></span>
+                            <span class="nav-item__label">Контрольные точки</span>
+                        </a>
+                        <a class="nav-item <?= is_active_route('/education/balance-types') ? 'is-active' : '' ?>" href="<?= e(url('/education/balance-types')) ?>">
+                            <span class="nav-item__icon"><?= icon('activity') ?></span>
+                            <span class="nav-item__label">Типы балансов</span>
+                        </a>
                         <a class="nav-item <?= is_active_route('/education/services') ? 'is-active' : '' ?>" href="<?= e(url('/education/services')) ?>">
                             <span class="nav-item__icon"><?= icon('file') ?></span>
                             <span class="nav-item__label">Услуги</span>

@@ -13,6 +13,7 @@ use App\Core\View;
 use App\Models\ActivityLog;
 use App\Models\Contract;
 use App\Models\EducationFinance;
+use App\Models\EducationCatalog;
 use App\Models\SchoolCalendar;
 use App\Models\StudentFile;
 use App\Models\StudentProfile;
@@ -26,11 +27,33 @@ final class EducationController
     public function classes(): void
     {
         $user = Auth::requireEducationAccess();
+        $folders = EducationCatalog::classFolders($user);
+        $folderIds = array_map(static fn (array $folder): int => (int) $folder['id'], $folders);
+        $selectedFolderId = (int) ($_GET['folder_id'] ?? 0);
+        if (!in_array($selectedFolderId, $folderIds, true)) {
+            $selectedFolderId = $folderIds[0] ?? 0;
+        }
+        $classes = StudyClass::all($user, $selectedFolderId ?: null);
+        $studentIds = [];
+        foreach ($classes as &$class) {
+            $class['students'] = StudyClass::students((int) $class['id']);
+            foreach ($class['students'] as $student) {
+                $studentIds[] = (int) $student['id'];
+            }
+        }
+        unset($class);
         View::render('education/classes/index', [
             'pageTitle' => 'Учебные классы',
             'pageEyebrow' => 'Курсанты и группы',
             'currentUser' => $user,
-            'classes' => StudyClass::all($user),
+            'classes' => $classes,
+            'folders' => $folders,
+            'selectedFolderId' => $selectedFolderId,
+            'programs' => EducationCatalog::activePrograms(),
+            'checkpoints' => EducationCatalog::checkpoints(true),
+            'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
+            'balanceTypes' => EducationCatalog::balanceTypes(true),
+            'balanceValues' => EducationCatalog::balanceValueMap($studentIds),
             'teachers' => User::teachers(),
             'weekdays' => StudyClass::WEEKDAYS,
             'statuses' => StudyClass::STATUSES,
@@ -66,6 +89,8 @@ final class EducationController
     {
         $user = Auth::requireEducationAccess();
         $class = $this->classOrFail((int) $id, $user);
+        $students = StudyClass::students((int) $id);
+        $studentIds = array_map(static fn (array $student): int => (int) $student['id'], $students);
         View::render('education/classes/show', [
             'pageTitle' => 'Класс ' . $class['group_number'],
             'pageEyebrow' => 'Учебный класс',
@@ -73,11 +98,17 @@ final class EducationController
             'class' => $class,
             'patterns' => StudyClass::patterns((int) $id),
             'lessons' => StudyClass::lessons((int) $id),
-            'students' => StudyClass::students((int) $id),
+            'students' => $students,
             'availableStudents' => StudyClass::availableStudents(),
             'teachers' => User::teachers(),
             'weekdays' => StudyClass::WEEKDAYS,
             'statuses' => StudyClass::STATUSES,
+            'folders' => EducationCatalog::classFolders($user),
+            'programs' => EducationCatalog::activePrograms(),
+            'checkpoints' => EducationCatalog::checkpoints(true),
+            'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
+            'balanceTypes' => EducationCatalog::balanceTypes(true),
+            'balanceValues' => EducationCatalog::balanceValueMap($studentIds),
         ]);
     }
 
@@ -178,6 +209,7 @@ final class EducationController
         $user = Auth::requireLogin();
         $student = $this->studentOrFail((int) $id, $user);
         $class = StudyClass::currentForStudent((int) $id);
+        $checkpoints = EducationCatalog::checkpoints(true);
         View::render('education/students/show', [
             'pageTitle' => trim($student['last_name'] . ' ' . $student['first_name']),
             'pageEyebrow' => 'Карточка курсанта',
@@ -195,7 +227,51 @@ final class EducationController
             'kassas' => EducationFinance::kassas(true),
             'history' => StudentProfile::enrollmentHistory((int) $id),
             'events' => ActivityLog::forEntity('user', (int) $id, 50),
+            'checkpoints' => $checkpoints,
+            'checkpointStates' => EducationCatalog::checkpointStateMap([(int) $id])[(int) $id] ?? [],
+            'balanceTypes' => EducationCatalog::balanceTypes(true),
+            'balanceValues' => EducationCatalog::balanceValueMap([(int) $id])[(int) $id] ?? [],
         ]);
+    }
+
+    public function setCheckpoint(string $id, string $checkpointId): void
+    {
+        $user = Auth::requireEducationAccess();
+        Csrf::enforce();
+        $student = $this->studentOrFail((int) $id, $user);
+        try {
+            $completed = (string) ($_POST['completed'] ?? '0') === '1';
+            EducationCatalog::setCheckpointState((int) $id, (int) $checkpointId, $completed, $user->id);
+            $checkpoint = EducationCatalog::findCheckpoint((int) $checkpointId);
+            ActivityLog::record('student.checkpoint_updated', $completed ? 'Контрольная точка пройдена' : 'Контрольная точка отменена', $user, [User::find((int) $id)], 'user', (int) $id, [
+                'name' => trim($student['last_name'] . ' ' . $student['first_name']),
+                'role_key' => User::ROLE_STUDENT,
+                'checkpoint' => $checkpoint['name'] ?? '',
+            ]);
+            Flash::set('success', $completed ? 'Контрольная точка отмечена как пройденная.' : 'Отметка контрольной точки снята.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        $classId = (int) ($_POST['class_id'] ?? 0);
+        Response::redirect($classId > 0 ? '/education/classes/' . $classId . '#students' : '/education/students/' . (int) $id . '#learning');
+    }
+
+    public function updateBalances(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $student = $this->studentOrFail((int) $id, $user);
+        try {
+            EducationCatalog::setStudentBalances((int) $id, (array) ($_POST['balances'] ?? []), $user->id);
+            ActivityLog::record('student.balances_updated', 'Обновлены балансы курсанта', $user, [User::find((int) $id)], 'user', (int) $id, [
+                'name' => trim($student['last_name'] . ' ' . $student['first_name']),
+                'role_key' => User::ROLE_STUDENT,
+            ]);
+            Flash::set('success', 'Балансы курсанта сохранены.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/students/' . (int) $id . '#learning');
     }
 
     public function updateStudent(string $id): void

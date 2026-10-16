@@ -28,7 +28,7 @@ final class StudyClass
         7 => 'Воскресенье',
     ];
 
-    public static function all(User $viewer): array
+    public static function all(User $viewer, ?int $folderId = null): array
     {
         $where = ['c.status <> "archived"'];
         $params = [];
@@ -36,13 +36,20 @@ final class StudyClass
             $where[] = 'c.teacher_id = :teacher_id';
             $params['teacher_id'] = $viewer->id;
         }
+        if ($folderId !== null && $folderId > 0) {
+            $where[] = 'c.folder_id = :folder_id';
+            $params['folder_id'] = $folderId;
+        }
         $stmt = Database::connection()->prepare(
-            'SELECT c.*, CONCAT_WS(" ", teacher.last_name, teacher.first_name, teacher.middle_name) AS teacher_name,
+            'SELECT c.*, f.name AS folder_name, p.name AS study_program_name, p.code AS study_program_code,
+                    CONCAT_WS(" ", teacher.last_name, teacher.first_name, teacher.middle_name) AS teacher_name,
                     (SELECT COUNT(*) FROM class_enrollments ce WHERE ce.class_id = c.id AND ce.status = "active") AS student_count,
                     (SELECT COUNT(*) FROM class_lessons lesson WHERE lesson.class_id = c.id) AS lesson_count,
                     (SELECT MIN(starts_at) FROM class_lessons lesson WHERE lesson.class_id = c.id AND lesson.starts_at >= NOW() AND lesson.status = "scheduled") AS next_lesson_at
              FROM student_classes c
              INNER JOIN users teacher ON teacher.id = c.teacher_id
+             LEFT JOIN class_folders f ON f.id = c.folder_id
+             LEFT JOIN training_programs p ON p.id = c.program_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY c.starts_on DESC, c.group_number'
         );
@@ -53,8 +60,11 @@ final class StudyClass
     public static function find(int $id): ?array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT c.*, CONCAT_WS(" ", teacher.last_name, teacher.first_name, teacher.middle_name) AS teacher_name
+            'SELECT c.*, f.name AS folder_name, p.name AS study_program_name, p.code AS study_program_code,
+                    CONCAT_WS(" ", teacher.last_name, teacher.first_name, teacher.middle_name) AS teacher_name
              FROM student_classes c INNER JOIN users teacher ON teacher.id = c.teacher_id
+             LEFT JOIN class_folders f ON f.id = c.folder_id
+             LEFT JOIN training_programs p ON p.id = c.program_id
              WHERE c.id = :id LIMIT 1'
         );
         $stmt->execute(['id' => $id]);
@@ -63,6 +73,7 @@ final class StudyClass
 
     public static function create(array $data, int $userId): int
     {
+        $data = array_merge($data, self::references($data, $userId));
         $patterns = self::patternsFromInput($data);
         self::validate($data, $patterns);
         $pdo = Database::connection();
@@ -73,10 +84,10 @@ final class StudyClass
         try {
             $stmt = $pdo->prepare(
                 'INSERT INTO student_classes
-                 (name, group_number, classroom, study_program, teacher_id, starts_on, driving_starts_on,
+                 (folder_id, name, group_number, classroom, study_program, program_id, teacher_id, starts_on, driving_starts_on,
                   internal_exam_on, inspection_registration_on, planned_lesson_count, lesson_duration_minutes,
                   status, notes, created_by, updated_by)
-                 VALUES (:name, :group_number, :classroom, :study_program, :teacher_id, :starts_on, :driving_starts_on,
+                 VALUES (:folder_id, :name, :group_number, :classroom, :study_program, :program_id, :teacher_id, :starts_on, :driving_starts_on,
                   :internal_exam_on, :inspection_registration_on, :planned_lesson_count, :lesson_duration_minutes,
                   :status, :notes, :created_by, :updated_by)'
             );
@@ -98,6 +109,7 @@ final class StudyClass
 
     public static function update(int $id, array $data, int $userId): void
     {
+        $data = array_merge($data, self::references($data, $userId));
         $patterns = self::patternsFromInput($data);
         self::validate($data, $patterns);
         $pdo = Database::connection();
@@ -107,8 +119,8 @@ final class StudyClass
         }
         try {
             $stmt = $pdo->prepare(
-                'UPDATE student_classes SET name = :name, group_number = :group_number, classroom = :classroom,
-                 study_program = :study_program, teacher_id = :teacher_id, starts_on = :starts_on,
+                'UPDATE student_classes SET folder_id = :folder_id, name = :name, group_number = :group_number, classroom = :classroom,
+                 study_program = :study_program, program_id = :program_id, teacher_id = :teacher_id, starts_on = :starts_on,
                  driving_starts_on = :driving_starts_on, internal_exam_on = :internal_exam_on,
                  inspection_registration_on = :inspection_registration_on, planned_lesson_count = :planned_lesson_count,
                  lesson_duration_minutes = :lesson_duration_minutes, status = :status, notes = :notes, updated_by = :updated_by
@@ -349,8 +361,11 @@ final class StudyClass
         if (mb_strlen(trim((string) ($data['name'] ?? ''))) < 2 || trim((string) ($data['group_number'] ?? '')) === '') {
             throw new RuntimeException('Укажите название и номер учебного класса.');
         }
-        if (trim((string) ($data['study_program'] ?? '')) === '') {
+        if ((int) ($data['program_id'] ?? 0) < 1 || trim((string) ($data['study_program'] ?? '')) === '') {
             throw new RuntimeException('Укажите учебную программу.');
+        }
+        if ((int) ($data['folder_id'] ?? 0) < 1) {
+            throw new RuntimeException('Выберите папку учебного класса.');
         }
         $teacher = User::find((int) ($data['teacher_id'] ?? 0));
         if (!$teacher || $teacher->isStudent()) {
@@ -373,10 +388,12 @@ final class StudyClass
     {
         $status = (string) ($data['status'] ?? 'active');
         return [
+            'folder_id' => (int) $data['folder_id'],
             'name' => trim((string) $data['name']),
             'group_number' => trim((string) $data['group_number']),
             'classroom' => self::nullable($data['classroom'] ?? null),
             'study_program' => trim((string) $data['study_program']),
+            'program_id' => (int) $data['program_id'],
             'teacher_id' => (int) $data['teacher_id'],
             'starts_on' => (string) $data['starts_on'],
             'driving_starts_on' => self::dateOrNull($data['driving_starts_on'] ?? null),
@@ -386,6 +403,28 @@ final class StudyClass
             'lesson_duration_minutes' => (int) $data['lesson_duration_minutes'],
             'status' => isset(self::STATUSES[$status]) ? $status : 'active',
             'notes' => self::nullable($data['notes'] ?? null),
+        ];
+    }
+
+    private static function references(array $data, int $userId): array
+    {
+        $folderId = (int) ($data['folder_id'] ?? 0);
+        if ($folderId < 1 || !EducationCatalog::findClassFolder($folderId)) {
+            $folderId = EducationCatalog::defaultClassFolderId($userId);
+        }
+        $programId = (int) ($data['program_id'] ?? 0);
+        $program = $programId > 0 ? EducationCatalog::findProgram($programId) : null;
+        if (!$program) {
+            $programId = EducationCatalog::findOrCreateProgram((string) ($data['study_program'] ?? ''), $userId);
+            $program = EducationCatalog::findProgram($programId);
+        }
+        if (!$program || (string) $program['status'] !== 'active') {
+            throw new RuntimeException('Выберите действующую учебную программу.');
+        }
+        return [
+            'folder_id' => $folderId,
+            'program_id' => $programId,
+            'study_program' => (string) $program['name'],
         ];
     }
 

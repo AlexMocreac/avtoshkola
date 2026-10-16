@@ -13,7 +13,7 @@ $teacherCookies = tempnam(sys_get_temp_dir(), 'avto-stage-three-teacher-');
 $pdo = Database::connection();
 $suffix = bin2hex(random_bytes(5));
 $password = 'StageThreeHttp123!';
-$ids = ['manager' => 0, 'teacher' => 0, 'student' => 0, 'class' => 0, 'service' => 0, 'kassa' => 0, 'sale' => 0, 'payment' => 0, 'contract' => 0];
+$ids = ['manager' => 0, 'teacher' => 0, 'student' => 0, 'class' => 0, 'program' => 0, 'service' => 0, 'kassa' => 0, 'sale' => 0, 'payment' => 0, 'contract' => 0];
 
 function stageThreeHttpCall(string $method, string $url, string $cookieFile, array $data = []): array
 {
@@ -138,6 +138,9 @@ try {
     $lookup = $pdo->prepare('SELECT id FROM student_classes WHERE group_number = :group_number');
     $lookup->execute(['group_number' => 'HTTP-' . $suffix]);
     $ids['class'] = (int) $lookup->fetchColumn();
+    if ($ids['class']) {
+        $ids['program'] = (int) $pdo->query('SELECT program_id FROM student_classes WHERE id = ' . $ids['class'])->fetchColumn();
+    }
     if (!$ids['class']) {
         throw new RuntimeException('Class was not created through HTTP.');
     }
@@ -212,6 +215,7 @@ try {
         $pdo->prepare('DELETE FROM class_enrollments WHERE class_id = :id')->execute(['id' => $ids['class']]);
         $pdo->prepare('DELETE FROM student_classes WHERE id = :id')->execute(['id' => $ids['class']]);
     }
+    if ($ids['program']) $pdo->prepare('DELETE FROM training_programs WHERE id = :id AND created_by = :created_by')->execute(['id' => $ids['program'], 'created_by' => $ids['manager']]);
     if ($ids['service']) $pdo->prepare('DELETE FROM education_services WHERE id = :id')->execute(['id' => $ids['service']]);
     if ($ids['kassa']) $pdo->prepare('DELETE FROM kassas WHERE id = :id')->execute(['id' => $ids['kassa']]);
     foreach (['student', 'teacher', 'manager'] as $key) {
