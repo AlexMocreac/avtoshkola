@@ -583,6 +583,124 @@
         });
     });
 
+    // Create a student directly from the selected class, matching the class browser workflow.
+    const classStudentModal = qs('#classStudentModal');
+    const classStudentForm = qs('#classStudentForm');
+    const classStudentError = qs('#classStudentFormError');
+    const classStudentPhoto = qs('[data-class-student-photo]');
+    const classStudentPhotoPreview = qs('[data-class-student-photo-preview]');
+    const classStudentPhotoPlaceholder = qs('[data-class-student-photo-placeholder]');
+    const classStudentPhotoClear = qs('[data-class-student-photo-clear]');
+    let classStudentPhotoUrl = '';
+
+    function generatedStudentPassword() {
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+        const values = new Uint32Array(11);
+        crypto.getRandomValues(values);
+        return `A9!${Array.from(values, (number) => alphabet[number % alphabet.length]).join('')}`;
+    }
+
+    function clearClassStudentPhoto() {
+        if (classStudentPhotoUrl) URL.revokeObjectURL(classStudentPhotoUrl);
+        classStudentPhotoUrl = '';
+        if (classStudentPhoto) classStudentPhoto.value = '';
+        if (classStudentPhotoPreview) {
+            classStudentPhotoPreview.src = '';
+            classStudentPhotoPreview.hidden = true;
+        }
+        classStudentPhotoPlaceholder?.removeAttribute('hidden');
+        classStudentPhotoClear?.classList.add('is-hidden');
+    }
+
+    function clearClassStudentErrors() {
+        qsa('.field.has-error', classStudentForm).forEach((field) => field.classList.remove('has-error'));
+        qsa('[data-class-student-error]', classStudentForm).forEach((error) => { error.textContent = ''; });
+        classStudentError?.classList.add('is-hidden');
+        if (classStudentError) classStudentError.textContent = '';
+    }
+
+    function resetClassStudentForm() {
+        if (!classStudentForm) return;
+        setFormLoading(classStudentForm, false, qs('#classStudentSubmit'));
+        classStudentForm.reset();
+        clearClassStudentErrors();
+        clearClassStudentPhoto();
+        syncAllDatePickers(classStudentForm);
+        const login = qs('[name="login"]', classStudentForm);
+        const password = qs('[name="password"]', classStudentForm);
+        if (login) login.value = `student.${Date.now().toString(36)}`;
+        if (password) password.value = generatedStudentPassword();
+        syncPhoneMasks(classStudentForm);
+    }
+
+    qsa('[data-class-student-create]').forEach((button) => button.addEventListener('click', () => {
+        resetClassStudentForm();
+        openDialog(classStudentModal);
+        window.setTimeout(() => qs('[name="last_name"]', classStudentForm)?.focus(), 80);
+    }));
+
+    qs('[data-class-student-password]')?.addEventListener('click', () => {
+        const password = qs('[name="password"]', classStudentForm);
+        if (!password) return;
+        password.value = generatedStudentPassword();
+        password.type = 'text';
+        password.focus();
+        password.select();
+    });
+
+    classStudentPhoto?.addEventListener('change', () => {
+        const file = classStudentPhoto.files?.[0];
+        if (!file) {
+            clearClassStudentPhoto();
+            return;
+        }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+            clearClassStudentPhoto();
+            if (classStudentError) {
+                classStudentError.textContent = 'Фото должно быть JPG, PNG или WEBP и не больше 5 МБ.';
+                classStudentError.classList.remove('is-hidden');
+            }
+            return;
+        }
+        if (classStudentPhotoUrl) URL.revokeObjectURL(classStudentPhotoUrl);
+        classStudentPhotoUrl = URL.createObjectURL(file);
+        classStudentPhotoPreview.src = classStudentPhotoUrl;
+        classStudentPhotoPreview.hidden = false;
+        classStudentPhotoPlaceholder?.setAttribute('hidden', '');
+        classStudentPhotoClear?.classList.remove('is-hidden');
+    });
+
+    classStudentPhotoClear?.addEventListener('click', clearClassStudentPhoto);
+
+    classStudentForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearClassStudentErrors();
+        if (!classStudentForm.reportValidity()) return;
+        const submit = qs('#classStudentSubmit');
+        setFormLoading(classStudentForm, true, submit);
+        try {
+            const data = await request(classStudentForm.action, { method: 'POST', body: new FormData(classStudentForm) });
+            closeDialog(classStudentModal);
+            toast(data.message);
+            window.setTimeout(() => window.location.assign(data.redirect), 350);
+        } catch (error) {
+            const errors = error.data?.errors || {};
+            Object.entries(errors).forEach(([name, message]) => {
+                const fieldError = qs(`[data-class-student-error="${name}"]`, classStudentForm);
+                if (fieldError) {
+                    fieldError.textContent = message;
+                    fieldError.closest('.field')?.classList.add('has-error');
+                }
+            });
+            if (classStudentError) {
+                classStudentError.textContent = error.message;
+                classStudentError.classList.remove('is-hidden');
+            }
+        } finally {
+            setFormLoading(classStudentForm, false, submit);
+        }
+    });
+
     // User management.
     const userModal = qs('#userModal');
     const userForm = qs('#userForm');

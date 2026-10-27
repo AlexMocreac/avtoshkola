@@ -66,6 +66,7 @@ $router->get('/education/classes/{id}', [EducationController::class, 'showClass'
 $router->post('/education/classes/{id}/update', [EducationController::class, 'updateClass']);
 $router->post('/education/classes/{id}/schedule', [EducationController::class, 'regenerateSchedule']);
 $router->post('/education/classes/{id}/students', [EducationController::class, 'enrollStudent']);
+$router->post('/education/classes/{id}/students/create', [EducationController::class, 'createClassStudent']);
 $router->get('/education/classes/{id}/roster', [EducationController::class, 'roster']);
 $router->get('/education/students', [EducationController::class, 'students']);
 $router->get('/education/students/{id}', [EducationController::class, 'student']);

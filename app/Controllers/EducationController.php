@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Csrf;
+use App\Core\Database;
 use App\Core\Flash;
 use App\Core\Response;
 use App\Core\Validator;
@@ -29,26 +30,59 @@ final class EducationController
         $user = Auth::requireEducationAccess();
         $folders = EducationCatalog::classFolders($user);
         $folderIds = array_map(static fn (array $folder): int => (int) $folder['id'], $folders);
+        $allClasses = StudyClass::all($user);
+        $classesByFolder = [];
+        $classMap = [];
+        foreach ($allClasses as $class) {
+            $folderId = (int) $class['folder_id'];
+            $classesByFolder[$folderId][] = $class;
+            $classMap[(int) $class['id']] = $class;
+        }
+
+        $selectedClassId = (int) ($_GET['class_id'] ?? 0);
+        $selectedClass = $classMap[$selectedClassId] ?? null;
+        if (!$selectedClass) {
+            $selectedClassId = 0;
+        }
         $selectedFolderId = (int) ($_GET['folder_id'] ?? 0);
+        if ($selectedClass) {
+            $selectedFolderId = (int) $selectedClass['folder_id'];
+        }
         if (!in_array($selectedFolderId, $folderIds, true)) {
             $selectedFolderId = $folderIds[0] ?? 0;
+            $selectedClass = null;
+            $selectedClassId = 0;
         }
-        $classes = StudyClass::all($user, $selectedFolderId ?: null);
+
+        $classes = $classesByFolder[$selectedFolderId] ?? [];
         $studentIds = [];
-        foreach ($classes as &$class) {
-            $class['students'] = StudyClass::students((int) $class['id']);
-            foreach ($class['students'] as $student) {
+        if ($selectedClass) {
+            $selectedClass['students'] = StudyClass::students($selectedClassId);
+            foreach ($selectedClass['students'] as $student) {
                 $studentIds[] = (int) $student['id'];
             }
+        } else {
+            foreach ($classes as &$class) {
+                $class['students'] = StudyClass::students((int) $class['id']);
+                foreach ($class['students'] as $student) {
+                    $studentIds[] = (int) $student['id'];
+                }
+            }
+            unset($class);
         }
-        unset($class);
+
         View::render('education/classes/index', [
             'pageTitle' => 'Учебные классы',
             'pageEyebrow' => 'Курсанты и группы',
             'currentUser' => $user,
             'classes' => $classes,
+            'allClasses' => $allClasses,
+            'classesByFolder' => $classesByFolder,
             'folders' => $folders,
             'selectedFolderId' => $selectedFolderId,
+            'selectedClassId' => $selectedClassId,
+            'selectedClass' => $selectedClass,
+            'availableStudents' => $selectedClass && $user->canManageEducation() ? StudyClass::availableStudents() : [],
             'programs' => EducationCatalog::activePrograms(),
             'checkpoints' => EducationCatalog::checkpoints(true),
             'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
@@ -58,6 +92,95 @@ final class EducationController
             'weekdays' => StudyClass::WEEKDAYS,
             'statuses' => StudyClass::STATUSES,
         ]);
+    }
+
+    public function createClassStudent(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce(true);
+        $class = $this->classOrFail((int) $id, $user);
+        $data = $_POST;
+        $data['role'] = User::ROLE_STUDENT;
+        $errors = Validator::user($data, true);
+        if ($errors) {
+            Response::json(['ok' => false, 'message' => 'Проверьте заполнение полей.', 'errors' => $errors], 422);
+        }
+        $contractData = [
+            'contract_number' => $data['contract_number'] ?? '',
+            'registration_number' => $data['registration_number'] ?? '',
+            'counterparty' => trim((string) ($data['last_name'] ?? '') . ' ' . (string) ($data['first_name'] ?? '') . ' ' . (string) ($data['middle_name'] ?? '')),
+            'client_phone' => $data['phone'] ?? '',
+            'subject' => 'Обучение в автошколе',
+            'direction' => 'driving_school',
+            'signed_on' => $data['signed_on'] ?? '',
+            'starts_on' => $data['joined_on'] ?? '',
+            'ends_on' => $data['training_end_on'] ?? '',
+            'amount' => $data['contract_amount'] ?? '',
+            'status' => 'active',
+            'notes' => $data['notes'] ?? '',
+        ];
+        $contractErrors = Validator::contract($contractData);
+        if ($contractErrors) {
+            Response::json(['ok' => false, 'message' => implode(' ', $contractErrors)], 422);
+        }
+
+        $pdo = Database::connection();
+        $photoPath = null;
+        $pdo->beginTransaction();
+        try {
+            $student = User::create($data, $user->id);
+            StudentProfile::ensure($student->id);
+            StudentProfile::update($student->id, $data);
+            StudyClass::enroll((int) $id, $student->id, $user->id, $_POST['joined_on'] ?? null);
+            $contractData['student_id'] = $student->id;
+            $contractId = Contract::create($contractData, $user->id);
+            $photoPath = StudentFile::storePhoto($student->id, $_FILES['photo'] ?? null);
+            if ($photoPath !== null) {
+                StudentProfile::setPhoto($student->id, $photoPath);
+            }
+            $contract = Contract::find($contractId);
+            ActivityLog::record('contract.created', 'Создан договор курсанта', $user, [$student], 'contract', $contractId, [
+                'number' => $contract['contract_number'] ?? '',
+                'counterparty' => $contractData['counterparty'],
+            ]);
+            ActivityLog::record('student.created_and_enrolled', 'Создан курсант и зачислен в учебный класс', $user, [$student], 'user', $student->id, [
+                'name' => $student->fullName(),
+                'role_key' => User::ROLE_STUDENT,
+                'class' => $class['group_number'],
+                'contract_id' => $contractId,
+            ]);
+            $pdo->commit();
+            Response::json([
+                'ok' => true,
+                'message' => 'Курсант, договор и зачисление в класс ' . $class['group_number'] . ' созданы.',
+                'redirect' => url('/education/classes?folder_id=' . (int) $class['folder_id'] . '&class_id=' . (int) $id),
+            ], 201);
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($photoPath !== null) {
+                $absolutePhotoPath = StudentFile::absolutePath($photoPath);
+                if ($absolutePhotoPath !== null) {
+                    @unlink($absolutePhotoPath);
+                }
+            }
+            if ($exception instanceof PDOException && (string) $exception->getCode() === '23000') {
+                Response::json([
+                    'ok' => false,
+                    'message' => 'Логин, email или номер договора уже используется.',
+                    'errors' => [
+                        'login' => 'Проверьте уникальность логина.',
+                        'email' => 'Проверьте уникальность email.',
+                        'contract_number' => 'Проверьте уникальность номера договора.',
+                    ],
+                ], 422);
+            }
+            if ($exception instanceof RuntimeException) {
+                Response::json(['ok' => false, 'message' => $exception->getMessage()], 422);
+            }
+            throw $exception;
+        }
     }
 
     public function createClass(): void
