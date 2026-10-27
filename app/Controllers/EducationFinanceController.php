@@ -11,6 +11,7 @@ use App\Core\Response;
 use App\Core\View;
 use App\Models\ActivityLog;
 use App\Models\EducationFinance;
+use App\Models\EducationCatalog;
 use PDOException;
 use RuntimeException;
 
@@ -65,7 +66,22 @@ final class EducationFinanceController
             'pageEyebrow' => 'Продажи курсантам',
             'currentUser' => $user,
             'services' => EducationFinance::services(),
+            'folders' => EducationFinance::serviceFolders(),
+            'balanceTypes' => EducationCatalog::balanceTypes(),
         ]);
+    }
+
+    public function createServiceFolder(): void
+    {
+        Auth::requireEducationManager();
+        Csrf::enforce();
+        try {
+            EducationFinance::createServiceFolder($_POST);
+            Flash::set('success', 'Папка добавлена.');
+        } catch (RuntimeException|PDOException $exception) {
+            Flash::set('error', $exception instanceof RuntimeException ? $exception->getMessage() : 'Не удалось создать папку.');
+        }
+        Response::redirect('/education/services');
     }
 
     public function createService(): void

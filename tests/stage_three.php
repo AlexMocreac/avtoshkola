@@ -86,10 +86,15 @@ try {
     ]);
     stageThreeCheck((StudentProfile::find($student->id)['gearbox'] ?? null) === 'manual', 'Student profile was not updated.');
 
-    $serviceId = EducationFinance::saveService(['name' => 'Курс B ' . $suffix, 'price' => '50000', 'status' => 'active'], $actor->id);
+    $balanceTypeId = (int) $pdo->query('SELECT id FROM student_balance_types ORDER BY id LIMIT 1')->fetchColumn();
+    stageThreeCheck($balanceTypeId > 0, 'A balance type is required.');
+    $serviceId = EducationFinance::saveService(['name' => 'Курс B ' . $suffix, 'price' => '50000', 'status' => 'active', 'allocations' => [['amount' => '20000', 'balances' => [$balanceTypeId => '6']]]], $actor->id);
     $kassaId = EducationFinance::saveKassa(['name' => 'Тестовая касса ' . $suffix, 'status' => 'active'], $actor->id);
     $saleId = EducationFinance::createSale($student->id, ['service_id' => $serviceId, 'amount' => '50000', 'sold_on' => $startsOn], $actor->id);
     EducationFinance::createPayment($student->id, ['sale_id' => $saleId, 'kassa_id' => $kassaId, 'amount' => '20000', 'paid_on' => $startsOn . 'T09:00'], $actor->id);
+    $balanceCheck = $pdo->prepare('SELECT amount FROM student_balances WHERE student_id = ? AND balance_type_id = ?');
+    $balanceCheck->execute([$student->id, $balanceTypeId]);
+    stageThreeCheck((float) $balanceCheck->fetchColumn() === 6.0, 'Payment did not credit the service balance allocation.');
     $totals = EducationFinance::totals($student->id);
     stageThreeCheck((float) $totals['sold_total'] === 50000.0 && (float) $totals['paid_total'] === 20000.0 && (float) $totals['debt_total'] === 30000.0, 'Installment payment totals are incorrect.');
     $overpaymentRejected = false;

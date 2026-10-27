@@ -54,6 +54,27 @@ final class EducationFinance
         return Database::connection()->query('SELECT * FROM education_services ' . $where . ' ORDER BY status, name')->fetchAll();
     }
 
+    public static function serviceFolders(): array
+    {
+        return Database::connection()->query('SELECT * FROM education_service_folders ORDER BY name')->fetchAll();
+    }
+
+    public static function createServiceFolder(array $data): void
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        $parent = (int) ($data['parent_id'] ?? 0);
+        if ($name === '' || mb_strlen($name) > 190) {
+            throw new RuntimeException('Укажите название папки.');
+        }
+        if ($parent) {
+            $check = Database::connection()->prepare('SELECT id FROM education_service_folders WHERE id = ?');
+            $check->execute([$parent]);
+            if (!$check->fetch()) { throw new RuntimeException('Папка не найдена.'); }
+        }
+        $stmt = Database::connection()->prepare('INSERT INTO education_service_folders (name, parent_id) VALUES (?, ?)');
+        $stmt->execute([$name, $parent ?: null]);
+    }
+
     public static function service(int $id): ?array
     {
         $stmt = Database::connection()->prepare('SELECT * FROM education_services WHERE id = :id LIMIT 1');
@@ -69,7 +90,29 @@ final class EducationFinance
             throw new RuntimeException('Укажите название и корректную стоимость услуги.');
         }
         $status = (string) ($data['status'] ?? 'active');
+        $folder = (int) ($data['folder_id'] ?? 0);
+        if ($folder) {
+            $check = Database::connection()->prepare('SELECT id FROM education_service_folders WHERE id = ?');
+            $check->execute([$folder]);
+            if (!$check->fetch()) { throw new RuntimeException('Папка не найдена.'); }
+        }
+        $rows = [];
+        foreach (($data['allocations'] ?? []) as $row) {
+            if (!is_array($row) || trim((string) ($row['amount'] ?? '')) === '') { continue; }
+            $amount = self::money($row['amount']);
+            if ($amount === null || (float) $amount <= 0) { throw new RuntimeException('Сумма должна быть больше нуля.'); }
+            $values = [];
+            foreach (($row['balances'] ?? []) as $typeId => $value) {
+                if ($value === '') { continue; }
+                if (!ctype_digit((string) $typeId) || !is_numeric($value) || (float) $value < 0) { throw new RuntimeException('Укажите корректные значения балансов.'); }
+                $values[(int) $typeId] = (float) $value;
+            }
+            $rows[] = ['amount' => $amount, 'balances' => $values];
+        }
+        $details = ['type' => in_array(($data['type'] ?? ''), ['service', 'product'], true) ? $data['type'] : 'service', 'code' => mb_substr(trim((string) ($data['code'] ?? '')), 0, 190), 'main_activity' => !empty($data['main_activity']), 'no_discounts' => !empty($data['no_discounts']), 'allocations' => $rows];
         $payload = [
+            'folder_id' => $folder ?: null,
+            'service_data' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             'name' => $name,
             'description' => self::nullable($data['description'] ?? null),
             'price' => $price,
@@ -78,15 +121,15 @@ final class EducationFinance
         ];
         if ($id) {
             $stmt = Database::connection()->prepare(
-                'UPDATE education_services SET name = :name, description = :description, price = :price,
+                'UPDATE education_services SET folder_id = :folder_id, service_data = :service_data, name = :name, description = :description, price = :price,
                  status = :status, updated_by = :updated_by WHERE id = :id'
             );
             $stmt->execute($payload + ['id' => $id]);
             return $id;
         }
         $stmt = Database::connection()->prepare(
-            'INSERT INTO education_services (name, description, price, status, created_by, updated_by)
-             VALUES (:name, :description, :price, :status, :created_by, :updated_by)'
+            'INSERT INTO education_services (folder_id, service_data, name, description, price, status, created_by, updated_by)
+             VALUES (:folder_id, :service_data, :name, :description, :price, :status, :created_by, :updated_by)'
         );
         $stmt->execute($payload + ['created_by' => $userId]);
         return (int) Database::connection()->lastInsertId();
@@ -114,15 +157,20 @@ final class EducationFinance
         if ($amount === null || (float) $amount <= 0) {
             throw new RuntimeException('Стоимость продажи должна быть больше нуля.');
         }
+        $details = json_decode($service['service_data'] ?? '', true) ?: [];
+        if (!empty($details['no_discounts']) && (float) $amount < (float) $service['price']) {
+            throw new RuntimeException('Скидки запрещены.');
+        }
         $soldOn = self::date($data['sold_on'] ?? null) ?: date('Y-m-d');
         $stmt = Database::connection()->prepare(
-            'INSERT INTO student_sales (student_id, service_id, service_name, amount, sold_on, notes, sold_by)
-             VALUES (:student_id, :service_id, :service_name, :amount, :sold_on, :notes, :sold_by)'
+            'INSERT INTO student_sales (student_id, service_id, service_name, service_data, amount, sold_on, notes, sold_by)
+             VALUES (:student_id, :service_id, :service_name, :service_data, :amount, :sold_on, :notes, :sold_by)'
         );
         $stmt->execute([
             'student_id' => $studentId,
             'service_id' => (int) $service['id'],
             'service_name' => (string) $service['name'],
+            'service_data' => $service['service_data'],
             'amount' => $amount,
             'sold_on' => $soldOn,
             'notes' => self::nullable($data['notes'] ?? null),
@@ -159,37 +207,47 @@ final class EducationFinance
             throw new RuntimeException('Выберите действующую кассу.');
         }
         $saleId = (int) ($data['sale_id'] ?? 0) ?: null;
-        if ($saleId !== null) {
-            $saleCheck = Database::connection()->prepare(
-                'SELECT s.id, s.amount,
-                        COALESCE((SELECT SUM(p.amount) FROM student_payments p WHERE p.sale_id = s.id), 0) AS paid_total
-                 FROM student_sales s WHERE s.id = :id AND s.student_id = :student_id AND s.status = "active"'
-            );
-            $saleCheck->execute(['id' => $saleId, 'student_id' => $studentId]);
-            $sale = $saleCheck->fetch();
-            if (!$sale) {
-                throw new RuntimeException('Продажа услуги не найдена.');
+        $pdo = Database::connection();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) { $pdo->beginTransaction(); } else { $pdo->exec('SAVEPOINT service_payment'); }
+        try {
+            $sale = null;
+            $paidBefore = 0.0;
+            if ($saleId !== null) {
+                // Serialize payments for a sale, including the balance credits they trigger.
+                $saleCheck = $pdo->prepare('SELECT id, amount, service_data FROM student_sales WHERE id = :id AND student_id = :student_id AND status = "active" FOR UPDATE');
+                $saleCheck->execute(['id' => $saleId, 'student_id' => $studentId]);
+                $sale = $saleCheck->fetch();
+                if (!$sale) { throw new RuntimeException('Продажа не найдена.'); }
+                $paid = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM student_payments WHERE sale_id = ?');
+                $paid->execute([$saleId]);
+                $paidBefore = (float) $paid->fetchColumn();
+                if ((float) $amount > (float) $sale['amount'] - $paidBefore + 0.00001) {
+                    throw new RuntimeException('Сумма платежа превышает остаток.');
+                }
             }
-            $remaining = (float) $sale['amount'] - (float) $sale['paid_total'];
-            if ((float) $amount > $remaining + 0.00001) {
-                throw new RuntimeException('Сумма платежа превышает остаток по выбранной услуге.');
+            $paidOn = self::dateTime($data['paid_on'] ?? null) ?: date('Y-m-d H:i:s');
+            $insert = $pdo->prepare('INSERT INTO student_payments (student_id, sale_id, kassa_id, amount, paid_on, notes, accepted_by) VALUES (:student_id, :sale_id, :kassa_id, :amount, :paid_on, :notes, :accepted_by)');
+            $insert->execute(['student_id' => $studentId, 'sale_id' => $saleId, 'kassa_id' => $kassaId, 'amount' => $amount, 'paid_on' => $paidOn, 'notes' => self::nullable($data['notes'] ?? null), 'accepted_by' => $userId]);
+            $paymentId = (int) $pdo->lastInsertId();
+            if ($sale) {
+                $details = json_decode($sale['service_data'] ?? '', true) ?: [];
+                $credit = $pdo->prepare('INSERT INTO student_balances (student_id, balance_type_id, amount, updated_by) SELECT :student_id, id, :amount, :updated_by FROM student_balance_types WHERE id = :type_id ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount), updated_by = VALUES(updated_by)');
+                foreach ($details['allocations'] ?? [] as $row) {
+                    $threshold = (float) ($row['amount'] ?? 0);
+                    if ($threshold > $paidBefore && $threshold <= $paidBefore + (float) $amount + 0.00001) {
+                        foreach ($row['balances'] ?? [] as $typeId => $value) {
+                            if ((float) $value > 0) { $credit->execute(['student_id' => $studentId, 'type_id' => (int) $typeId, 'amount' => $value, 'updated_by' => $userId]); }
+                        }
+                    }
+                }
             }
+            if ($ownsTransaction) { $pdo->commit(); } else { $pdo->exec('RELEASE SAVEPOINT service_payment'); }
+            return $paymentId;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction) { $pdo->rollBack(); } else { $pdo->exec('ROLLBACK TO SAVEPOINT service_payment'); }
+            throw $exception;
         }
-        $paidOn = self::dateTime($data['paid_on'] ?? null) ?: date('Y-m-d H:i:s');
-        $insert = Database::connection()->prepare(
-            'INSERT INTO student_payments (student_id, sale_id, kassa_id, amount, paid_on, notes, accepted_by)
-             VALUES (:student_id, :sale_id, :kassa_id, :amount, :paid_on, :notes, :accepted_by)'
-        );
-        $insert->execute([
-            'student_id' => $studentId,
-            'sale_id' => $saleId,
-            'kassa_id' => $kassaId,
-            'amount' => $amount,
-            'paid_on' => $paidOn,
-            'notes' => self::nullable($data['notes'] ?? null),
-            'accepted_by' => $userId,
-        ]);
-        return (int) Database::connection()->lastInsertId();
     }
 
     public static function totals(int $studentId): array

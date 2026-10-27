@@ -101,6 +101,7 @@ $router->get('/education/kassas', [EducationFinanceController::class, 'kassas'])
 $router->post('/education/kassas', [EducationFinanceController::class, 'createKassa']);
 $router->post('/education/kassas/{id}/update', [EducationFinanceController::class, 'updateKassa']);
 $router->get('/education/services', [EducationFinanceController::class, 'services']);
+$router->post('/education/services/folders', [EducationFinanceController::class, 'createServiceFolder']);
 $router->post('/education/services', [EducationFinanceController::class, 'createService']);
 $router->post('/education/services/{id}/update', [EducationFinanceController::class, 'updateService']);
 $router->get('/calendar', [CalendarController::class, 'index']);

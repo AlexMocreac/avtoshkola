@@ -103,8 +103,8 @@ try {
                     throw new RuntimeException('Class form is missing enhanced control: ' . $needle);
                 }
             }
-        } elseif ($path === '/education/services' && !str_contains($page['body'], 'data-money-input')) {
-            throw new RuntimeException('Service form is missing the formatted money input.');
+        } elseif ($path === '/education/services' && (!str_contains($page['body'], 'id="service-dialog"') || !str_contains($page['body'], 'id="allocation-rows"'))) {
+            throw new RuntimeException('Service editor or balance allocation grid is missing.');
         }
     }
 
