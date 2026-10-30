@@ -85,7 +85,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     <p class="nav-label nav-label--section">Обучение</p>
                     <a class="nav-item <?= is_active_route('/education/classes') ? 'is-active' : '' ?>" href="<?= e(url('/education/classes')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
-                        <span class="nav-item__label">Учебные классы</span>
+                        <span class="nav-item__label">Учебные группы</span>
                     </a>
                     <a class="nav-item <?= is_active_route('/education/students') ? 'is-active' : '' ?>" href="<?= e(url('/education/students')) ?>">
                         <span class="nav-item__icon"><?= icon('user') ?></span>

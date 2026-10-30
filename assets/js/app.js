@@ -201,7 +201,7 @@
     datePopover.innerHTML = `
         <div class="date-popover__head">
             <button type="button" data-calendar-prev aria-label="Предыдущий месяц">‹</button>
-            <strong data-calendar-title></strong>
+            <div class="date-popover__selectors"><select data-calendar-month aria-label="Месяц"></select><input data-calendar-year type="number" min="100" max="9999" aria-label="Год"></div>
             <button type="button" data-calendar-next aria-label="Следующий месяц">›</button>
         </div>
         <div class="date-popover__week"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
@@ -218,6 +218,9 @@
             <button class="date-popover__apply" type="button" data-calendar-apply>Выбрать</button>
         </div>`;
 
+    const monthSelect = qs('[data-calendar-month]', datePopover);
+    const yearInput = qs('[data-calendar-year]', datePopover);
+    monthNames.forEach((name, index) => monthSelect.add(new Option(name.toLowerCase(), String(index))));
     const hourSelect = qs('[data-calendar-hour]', datePopover);
     const minuteSelect = qs('[data-calendar-minute]', datePopover);
     for (let value = 0; value < 24; value++) hourSelect.add(new Option(padNumber(value), String(value)));
@@ -283,7 +286,8 @@
     }
 
     function renderCalendar() {
-        qs('[data-calendar-title]', datePopover).textContent = `${monthNames[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}`;
+        monthSelect.value = String(calendarMonth.getMonth());
+        yearInput.value = String(calendarMonth.getFullYear());
         const container = qs('[data-calendar-days]', datePopover);
         container.replaceChildren();
         const first = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
@@ -379,6 +383,25 @@
             selectedHour = Number(hourSelect.value);
             selectedMinute = Number(minuteSelect.value);
             commitDatePicker();
+        }
+    });
+    monthSelect.addEventListener('change', () => {
+        calendarMonth = new Date(calendarMonth.getFullYear(), Number(monthSelect.value), 1);
+        renderCalendar();
+    });
+    function changeCalendarYear() {
+        const year = Number(yearInput.value);
+        if (Number.isInteger(year) && year >= 100 && year <= 9999) {
+            calendarMonth = new Date(year, calendarMonth.getMonth(), 1);
+        }
+        renderCalendar();
+    }
+    yearInput.addEventListener('change', changeCalendarYear);
+    yearInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            changeCalendarYear();
+            yearInput.blur();
         }
     });
     hourSelect.addEventListener('change', () => { selectedHour = Number(hourSelect.value); });

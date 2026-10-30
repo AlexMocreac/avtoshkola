@@ -72,7 +72,7 @@ final class EducationController
         }
 
         View::render('education/classes/index', [
-            'pageTitle' => 'Учебные классы',
+            'pageTitle' => 'Учебные группы',
             'pageEyebrow' => 'Курсанты и группы',
             'currentUser' => $user,
             'classes' => $classes,

@@ -445,7 +445,11 @@ img, svg { display: block; }
 .date-popover { padding: 13px; border: 1px solid #dde2f0; border-radius: 17px; background: rgba(255,255,255,.98); box-shadow: 0 24px 70px rgba(26,36,72,.22); backdrop-filter: blur(16px); position: fixed; z-index: 1000; animation: calendar-in 150ms ease-out both; }
 @keyframes calendar-in { from { opacity: 0; transform: translateY(-5px) scale(.985); } }
 .date-popover__head { min-height: 38px; display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; gap: 4px; }
-.date-popover__head strong { font-size: 0.875rem; text-align: center; text-transform: lowercase; }
+.date-popover__selectors { display: flex; justify-content: center; align-items: center; gap: 4px; min-width: 0; }
+.date-popover__selectors select, .date-popover__selectors input { min-width: 0; height: 34px; padding: 0 4px; color: var(--ink); border: 1px solid transparent; border-radius: 8px; background: transparent; font: inherit; font-size: 0.875rem; font-weight: 750; }
+.date-popover__selectors select { max-width: 125px; cursor: pointer; }
+.date-popover__selectors input { width: 65px; }
+.date-popover__selectors select:hover, .date-popover__selectors input:hover, .date-popover__selectors select:focus, .date-popover__selectors input:focus { border-color: var(--line-strong); outline: none; }
 .date-popover__head button { width: 34px; height: 34px; padding: 0; color: var(--accent-deep); border: 0; border-radius: 10px; background: var(--accent-soft); font-size: 1.4375rem; line-height: 1; cursor: pointer; }
 .date-popover__head button:hover { color: #fff; background: var(--accent); }
 .date-popover__week, .date-popover__days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
@@ -578,6 +582,12 @@ img, svg { display: block; }
 .topbar__title-group > div { min-width: 0; overflow-wrap: anywhere; }
 .topbar__menu, .topbar__actions { flex-shrink: 0; }
 .status-pill { white-space: normal; }
+.contracts-table [data-contract-column="status"] .status-pill { white-space: nowrap; overflow-wrap: normal; }
+.contracts-table [data-contract-column="status"] .status-pill i { flex: none; }
+.contracts-table [data-contract-column="client"] { min-width: 210px; overflow-wrap: normal; word-break: normal; }
+.contract-student-link { display: block; color: var(--accent-deep); font-size: 0.875rem; font-weight: 800; }
+.contracts-table td strong + .contract-student-link { margin-top: 4px; }
+.contract-student-link:hover { text-decoration: underline; }
 .role-chip { white-space: normal; overflow-wrap: anywhere; }
 .metric-card, .panel { min-width: 0; overflow-wrap: anywhere; }
 .metric-card__top, .panel__header { flex-wrap: wrap; gap: 12px; }
@@ -657,7 +667,7 @@ img, svg { display: block; }
     .direction-tabs { grid-template-columns: 1fr; }.direction-tab { min-height: 50px; }.lead-board { margin-inline: -14px; padding-inline: 14px; grid-template-columns: repeat(5, 245px); }.lead-column__body { max-height: none; }
     .filter-bar--lead-board, .filter-bar--contracts { grid-template-columns: 1fr 1fr; }.filter-bar--lead-board .search-field, .filter-bar--contracts .search-field { grid-column: 1 / -1; }
     .journal-source-note { width: 100%; justify-content: center; }.lead-details__summary { grid-template-columns: 1fr; }
-    .contracts-table { min-width: 0; }.contracts-table th:last-child, .contracts-table td:last-child { position: static; box-shadow: none; }
+    .contracts-table { min-width: 0; }.contracts-table [data-contract-column="client"] { min-width: 0; }.contracts-table th:last-child, .contracts-table td:last-child { position: static; box-shadow: none; }
 }
 
 @media (max-width: 480px) {

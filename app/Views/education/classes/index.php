@@ -13,14 +13,14 @@ $formatBalance = static function (float $amount, string $unit): string {
 $studentName = static fn (array $student): string => trim($student['last_name'] . ' ' . $student['first_name'] . ' ' . ($student['middle_name'] ?? ''));
 ?>
 <section class="section-heading reveal">
-    <div><h2>Учебные классы</h2><p>Выберите папку, чтобы увидеть её классы, или класс — чтобы открыть список курсантов.</p></div>
+    <div><h2>Учебные группы</h2><p>Выберите папку, чтобы увидеть её классы, или класс — чтобы открыть список курсантов.</p></div>
     <?php if ($currentUser->canManageEducation()): ?><div class="page-actions"><a class="button button--secondary" href="<?= e(url('/education/programs')) ?>"><?= icon('book-open', 17) ?> Учебные программы</a><a class="button button--secondary" href="<?= e(url('/education/checkpoints')) ?>"><?= icon('check-square', 17) ?> Контрольные точки</a></div><?php endif; ?>
 </section>
 
 <div class="catalog-layout class-browser">
     <aside class="panel catalog-folders class-navigator reveal">
         <div class="panel__header"><div><p class="page-eyebrow">Навигатор</p><h3>Папки и классы</h3></div><span class="catalog-count"><?= count($folders) + count($allClasses) ?></span></div>
-        <nav class="class-tree" aria-label="Папки и учебные классы">
+        <nav class="class-tree" aria-label="Папки и учебные группы">
             <?php foreach ($folders as $folder): $folderClasses = $classesByFolder[(int) $folder['id']] ?? []; $folderActive = (int) $folder['id'] === (int) $selectedFolderId; ?>
                 <section class="class-tree__branch <?= $folderActive ? 'is-active' : '' ?>">
                     <a class="class-tree__folder <?= $folderActive && !$selectedClass ? 'is-active' : '' ?>" href="<?= e(url('/education/classes?folder_id=' . $folder['id'])) ?>">
@@ -85,7 +85,7 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
         <?php else: ?>
             <section class="folder-heading panel reveal">
                 <span class="folder-heading__icon"><?= icon('folder', 28) ?></span>
-                <div><p class="page-eyebrow">Выбранная папка</p><h2><?= e($selectedFolder['name'] ?? 'Учебные классы') ?></h2><p><?= (int) ($selectedFolder['class_count'] ?? 0) ?> классов · <?= (int) ($selectedFolder['student_count'] ?? 0) ?> курсантов</p></div>
+                <div><p class="page-eyebrow">Выбранная папка</p><h2><?= e($selectedFolder['name'] ?? 'Учебные группы') ?></h2><p><?= (int) ($selectedFolder['class_count'] ?? 0) ?> классов · <?= (int) ($selectedFolder['student_count'] ?? 0) ?> курсантов</p></div>
             </section>
 
             <?php if ($currentUser->canManageEducation()): ?>
