@@ -70,7 +70,9 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
             <section class="panel folder-class class-students-panel reveal">
                 <div class="panel__header"><div><p class="page-eyebrow">Состав класса</p><h3>Курсанты</h3></div><span class="catalog-count"><?= count($selectedClass['students']) ?></span></div>
                 <div class="data-table-wrap"><table class="data-table stage-table class-roster-table"><thead><tr><th>Курсант</th><th>Контрольные точки</th><th>Балансы</th><th>Расчёты</th><th></th></tr></thead><tbody>
-                    <?php foreach ($selectedClass['students'] as $student): $studentId = (int) $student['id']; ?><tr>
+                    <?php foreach ($selectedClass['students'] as $student): $studentId = (int) $student['id'];
+                        $userJson = json_encode(array_intersect_key($student, array_flip(['id', 'login', 'email', 'phone', 'first_name', 'last_name', 'middle_name', 'role', 'access_months'])), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    ?><tr<?= $currentUser->canManageUsers() ? ' data-user-row data-class-student-edit data-user="' . e($userJson) . '"' : '' ?>>
                         <td><div class="table-person"><span class="avatar avatar--soft avatar--sm"><?= e(initials($student['first_name'], $student['last_name'])) ?></span><span><strong><?= e($studentName($student)) ?></strong><small>@<?= e($student['login']) ?> · <?= e($student['phone'] ?: 'телефон не указан') ?></small></span></div></td>
                         <td><div class="checkpoint-strip"><?php foreach ($checkpoints as $checkpoint): $done = !empty($checkpointStates[$studentId][(int) $checkpoint['id']]['is_completed']); ?><form method="post" action="<?= e(url('/education/students/' . $studentId . '/checkpoints/' . $checkpoint['id'])) ?>"><?= csrf_field() ?><input type="hidden" name="completed" value="<?= $done ? '0' : '1' ?>"><input type="hidden" name="class_id" value="<?= (int) $selectedClass['id'] ?>"><button class="checkpoint-chip <?= $done ? 'is-complete' : '' ?>" type="submit" title="<?= e($checkpoint['name']) ?> · <?= $done ? 'снять отметку' : 'отметить пройденной' ?>"><?= e($checkpoint['code']) ?></button></form><?php endforeach; ?><?php if (!$checkpoints): ?><span class="table-subline">Не настроены</span><?php endif; ?></div></td>
                         <td><div class="balance-strip"><?php foreach ($balanceTypes as $type): $amount = (float) ($balanceValues[$studentId][(int) $type['id']] ?? 0); ?><span class="balance-chip" title="<?= e($type['name']) ?>"><b style="--chip-color:<?= e($type['color']) ?>"><?= e($type['code']) ?></b><span><?= e($formatBalance($amount, $type['unit'])) ?></span></span><?php endforeach; ?><?php if (!$balanceTypes): ?><span class="table-subline">Не настроены</span><?php endif; ?></div></td>
@@ -176,3 +178,9 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
     </form>
 </dialog>
 <?php endif; ?>
+
+<?php if ($selectedClass && $currentUser->canManageUsers()): ?>
+<?php $showSalesAction = $currentUser->canManageEducation(); $group = 'students'; $assignableRoles = [\App\Models\User::ROLE_STUDENT => \App\Models\User::ROLES[\App\Models\User::ROLE_STUDENT]]; require __DIR__ . '/../../users/_form_modal.php'; ?>
+<?php endif; ?>
+
+<?php if ($selectedClass && $currentUser->canManageEducation() && $currentUser->canManageUsers()): require __DIR__ . '/_sales_modal.php'; endif; ?>

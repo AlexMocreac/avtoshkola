@@ -76,6 +76,8 @@ $router->post('/education/students/{id}/transfer', [EducationController::class, 
 $router->post('/education/students/{id}/documents', [EducationController::class, 'addDocument']);
 $router->post('/education/students/{id}/contracts', [EducationController::class, 'createContract']);
 $router->post('/education/students/{id}/sales', [EducationController::class, 'createSale']);
+$router->post('/education/students/{id}/sales/{saleId}/update', [EducationController::class, 'updateSale']);
+$router->post('/education/students/{id}/sales/{saleId}/delete', [EducationController::class, 'deleteSale']);
 $router->post('/education/students/{id}/payments', [EducationController::class, 'createPayment']);
 $router->post('/education/students/{id}/checkpoints/{checkpointId}', [EducationController::class, 'setCheckpoint']);
 $router->post('/education/students/{id}/balances', [EducationController::class, 'updateBalances']);

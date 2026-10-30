@@ -82,6 +82,8 @@ final class EducationController
             'selectedFolderId' => $selectedFolderId,
             'selectedClassId' => $selectedClassId,
             'selectedClass' => $selectedClass,
+            'saleServices' => $selectedClass && $user->canManageEducation() ? EducationFinance::services(true) : [],
+            'studentSales' => $selectedClass && $user->canManageEducation() ? array_combine($studentIds, array_map([EducationFinance::class, 'sales'], $studentIds)) : [],
             'availableStudents' => $selectedClass && $user->canManageEducation() ? StudyClass::availableStudents() : [],
             'programs' => EducationCatalog::activePrograms(),
             'checkpoints' => EducationCatalog::checkpoints(true),
@@ -529,6 +531,31 @@ final class EducationController
                 'name' => 'Продажа №' . $saleId, 'role_key' => User::ROLE_STUDENT,
             ]);
             Flash::set('success', 'Продажа услуги добавлена. Можно принять оплату полностью или частями.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/students/' . $id . '#payments');
+    }
+
+    public function updateSale(string $id, string $saleId): void
+    {
+        $this->changeSale($id, $saleId, false);
+    }
+
+    public function deleteSale(string $id, string $saleId): void
+    {
+        $this->changeSale($id, $saleId, true);
+    }
+
+    private function changeSale(string $id, string $saleId, bool $delete): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $this->studentOrFail((int) $id, $user);
+        try {
+            EducationFinance::changeUnpaidSale((int) $id, (int) $saleId, $delete ? null : $_POST);
+            ActivityLog::record($delete ? 'student.sale_deleted' : 'student.sale_updated', $delete ? 'Продажа удалена' : 'Продажа обновлена', $user, [User::find((int) $id)], 'user', (int) $id, ['name' => 'Продажа №' . $saleId, 'role_key' => User::ROLE_STUDENT]);
+            Flash::set('success', $delete ? 'Продажа удалена.' : 'Продажа обновлена.');
         } catch (RuntimeException $exception) {
             Flash::set('error', $exception->getMessage());
         }

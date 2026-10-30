@@ -751,6 +751,12 @@
         openDialog(userModal);
     }));
 
+    qsa('[data-class-student-edit]').forEach((row) => row.addEventListener('dblclick', (event) => {
+        if (event.target.closest('button, a, input, select, textarea, form')) return;
+        fillUserForm(JSON.parse(row.dataset.user));
+        openDialog(userModal);
+    }));
+
     qs('#generatePassword')?.addEventListener('click', () => {
         const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
         const values = new Uint32Array(11);
@@ -1863,4 +1869,71 @@
     qsa('form[data-submit-loading]').forEach((form) => form.addEventListener('submit', (event) => {
         if (!event.defaultPrevented) setFormLoading(form, true, event.submitter);
     }));
+    // Sales workflow opened from the class student editor.
+    const salesDataNode = qs('#studentSalesData');
+    if (salesDataNode) {
+        const data = JSON.parse(salesDataNode.textContent);
+        const salesDialog = qs('#studentSalesDialog');
+        const wizard = qs('#saleWizard');
+        const form = qs('#saleWizardForm');
+        const trigger = qs('#studentSalesOpen');
+        let studentId = '', selected = null, step = 0, installments = [];
+        const money = (value) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0) + ' ₽';
+        const cell = (row, value) => { const td = document.createElement('td'); td.textContent = value; row.append(td); };
+        const details = (service) => { try { return JSON.parse(service.service_data || '{}') || {}; } catch { return {}; } };
+        const error = (message = '') => { const el = qs('[data-sale-error]', form); el.textContent = message; el.classList.toggle('is-hidden', !message); };
+        function renderSales() {
+            const rows = qs('[data-sales-rows]', salesDialog); rows.replaceChildren();
+            const sales = data.sales[studentId] || []; let total = 0, paid = 0;
+            sales.forEach((sale) => { const row = document.createElement('tr'); total += Number(sale.amount); paid += Number(sale.paid_total); [sale.sold_on, money(sale.amount), money(sale.paid_total), money(Number(sale.amount) - Number(sale.paid_total)), sale.service_name, sale.seller_name].forEach(v => cell(row, v)); rows.append(row); });
+            if (!sales.length) { const row = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = 'Продаж пока нет'; row.append(td); rows.append(row); }
+            qs('[data-sales-totals]', salesDialog).textContent = `Итого начислено: ${money(total)} · Итого оплачено: ${money(paid)} · Задолженность: ${money(Math.max(0, total - paid))}`;
+        }
+        trigger.addEventListener('click', () => {
+            studentId = userForm.dataset.userId; if (!studentId) return;
+            const name = ['last_name', 'first_name', 'middle_name'].map(n => userForm.elements[n].value).filter(Boolean).join(' ');
+            qsa('[data-sales-student]').forEach(el => { el.textContent = name; });
+            qs('[data-sales-profile]').href = path(`education/students/${studentId}#payments`);
+            form.action = path(`education/students/${studentId}/sales`); renderSales(); openDialog(salesDialog);
+        });
+        // The action is meaningful only for an existing student.
+        const syncTrigger = () => { trigger.hidden = userForm.dataset.mode !== 'edit'; };
+        new MutationObserver(syncTrigger).observe(userForm, { attributes: true, attributeFilter: ['data-mode'] }); syncTrigger();
+        qs('[data-sales-close]').addEventListener('click', () => closeDialog(salesDialog));
+        qs('[data-wizard-close]').addEventListener('click', () => closeDialog(wizard));
+        function renderServices() {
+            const rows = qs('[data-service-rows]', form); rows.replaceChildren(); const query = qs('.sale-search', form).value.toLocaleLowerCase();
+            data.services.filter(s => s.name.toLocaleLowerCase().includes(query)).forEach(service => {
+                const row = document.createElement('tr'); row.dataset.serviceId = service.id; row.classList.toggle('is-selected', selected?.id === service.id);
+                [service.name, money(service.price), details(service).main_activity ? '✓' : '—'].forEach(v => cell(row, v));
+                row.addEventListener('click', () => { selected = service; qs('[name="service_id"]', form).value = service.id; qs('[data-tariff]', form).value = money(service.price); qs('[data-sale-amount]', form).value = service.price; renderServices(); error(); }); rows.append(row);
+            });
+            if (!rows.children.length) { const row = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 3; td.textContent = 'Услуги не найдены'; row.append(td); rows.append(row); }
+        }
+        function renderInstallments() {
+            const rows = qs('[data-installment-rows]', form); rows.replaceChildren(); installments.forEach((item, index) => { const row = document.createElement('tr'); cell(row, item.date); cell(row, money(item.amount)); const td = document.createElement('td'); const button = document.createElement('button'); button.type = 'button'; button.className = 'button button--ghost'; button.textContent = 'Удалить'; button.addEventListener('click', () => { installments.splice(index, 1); renderInstallments(); }); td.append(button); row.append(td); rows.append(row); });
+        }
+        function renderStep() {
+            qsa('[data-sale-step]', form).forEach(el => { el.hidden = Number(el.dataset.saleStep) !== step; });
+            qsa('.sale-progress span', wizard).forEach((el, i) => el.classList.toggle('is-active', i === step));
+            qs('[data-sale-back]', form).hidden = step === 0; qs('[data-sale-next]', form).hidden = step === 4; qs('[data-sale-finish]', form).hidden = step !== 4; error();
+            if (step === 3) { const head = qs('[data-allocation-head]', form), rows = qs('[data-allocation-rows]', form); head.replaceChildren(); rows.replaceChildren(); const hr = document.createElement('tr'); const amountHeading = document.createElement('th'); amountHeading.textContent = 'Сумма оплаты'; hr.append(amountHeading); data.balances.forEach(b => { const th = document.createElement('th'), label = document.createElement('span'); th.title = b.name; label.className = 'balance-code'; label.style.setProperty('--chip-color', b.color); label.textContent = b.code; th.append(label); hr.append(th); }); head.append(hr); const allocations = details(selected).allocations || []; allocations.forEach(item => { const row = document.createElement('tr'); cell(row, money(item.amount)); data.balances.forEach(b => cell(row, item.balances?.[b.id] ?? '—')); rows.append(row); }); if (!allocations.length) { const row = document.createElement('tr'), td = document.createElement('td'); td.colSpan = data.balances.length + 1; td.textContent = 'Для этой услуги схема начислений не настроена.'; row.append(td); rows.append(row); } }
+            if (step === 4) { const review = qs('[data-sale-review]', form); review.replaceChildren(); [`Услуга: ${selected.name}`, `Дата продажи: ${form.elements.sold_on.value}`, `Стоимость: ${money(qs('[data-sale-amount]', form).value)}`, 'После завершения продажи можно принять оплату в карточке курсанта.'].forEach(t => { const p = document.createElement('div'); p.textContent = t; review.append(p); }); }
+        }
+        qs('[data-sale-start]').addEventListener('click', () => { form.reset(); selected = null; installments = []; step = 0; renderServices(); renderInstallments(); renderStep(); openDialog(wizard); });
+        qs('.sale-search', form).addEventListener('input', renderServices);
+        qs('[data-sale-back]', form).addEventListener('click', () => { if (step > 0) { step--; renderStep(); } });
+        qs('[data-sale-next]', form).addEventListener('click', () => {
+            if (step === 0 && !selected) return error('Выберите услугу или товар.');
+            if (step === 1) { const amount = qs('[data-sale-amount]', form); if (!form.elements.sold_on.value || !amount.validity.valid || Number(amount.value) <= 0) return error('Укажите дату и корректную сумму продажи.'); if (details(selected).no_discounts && Number(amount.value) < Number(selected.price)) return error('Для этой услуги скидки запрещены.'); qs('[name="amount"]', form).value = amount.value; }
+            if (step === 2) {
+                const total = installments.reduce((sum, item) => sum + Math.round(Number(item.amount) * 100), 0);
+                const saleTotal = Math.round(Number(qs('[data-sale-amount]', form).value) * 100);
+                if (total !== saleTotal) return error(`Сумма этапов оплаты (${money(total / 100)}) должна равняться сумме продажи (${money(saleTotal / 100)}).`);
+            }
+            step++; renderStep();
+        });
+        qs('[data-installment-add]', form).addEventListener('click', () => { const date = qs('[data-installment-date]', form), amount = qs('[data-installment-amount]', form); if (!date.value || !amount.validity.valid || Number(amount.value) <= 0) return error('Укажите дату и сумму этапа.'); installments.push({ date: date.value, amount: amount.value }); date.value = ''; amount.value = ''; error(); renderInstallments(); });
+    }
+
 })();

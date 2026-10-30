@@ -89,9 +89,28 @@ try {
     $balanceTypeId = (int) $pdo->query('SELECT id FROM student_balance_types ORDER BY id LIMIT 1')->fetchColumn();
     stageThreeCheck($balanceTypeId > 0, 'A balance type is required.');
     $serviceId = EducationFinance::saveService(['name' => 'Курс B ' . $suffix, 'price' => '50000', 'status' => 'active', 'allocations' => [['amount' => '20000', 'balances' => [$balanceTypeId => '6']]]], $actor->id);
+    $savedDetails = json_decode(EducationFinance::service($serviceId)['service_data'], true);
+    stageThreeCheck((float) $savedDetails['allocations'][0]['balances'][$balanceTypeId] === 6.0, 'Service balance hours were not saved.');
+    $missingThresholdRejected = false;
+    try {
+        EducationFinance::saveService(['name' => 'Курс B ' . $suffix, 'price' => '50000', 'allocations' => [['amount' => '', 'balances' => [$balanceTypeId => '6']]]], $actor->id, $serviceId);
+    } catch (RuntimeException $exception) {
+        $missingThresholdRejected = true;
+    }
+    stageThreeCheck($missingThresholdRejected, 'Balance hours without a payment threshold were silently discarded.');
     $kassaId = EducationFinance::saveKassa(['name' => 'Тестовая касса ' . $suffix, 'status' => 'active'], $actor->id);
     $saleId = EducationFinance::createSale($student->id, ['service_id' => $serviceId, 'amount' => '50000', 'sold_on' => $startsOn], $actor->id);
+    EducationFinance::changeUnpaidSale($student->id, $saleId, ['amount' => '50000', 'sold_on' => $startsOn, 'notes' => 'Updated']);
+    stageThreeCheck(EducationFinance::sales($student->id)[0]['notes'] === 'Updated', 'Unpaid sale was not updated.');
+    $removableSale = EducationFinance::createSale($student->id, ['service_id' => $serviceId, 'amount' => '50000', 'sold_on' => $startsOn], $actor->id);
+    EducationFinance::changeUnpaidSale($student->id, $removableSale, null);
+    stageThreeCheck(count(EducationFinance::sales($student->id)) === 1, 'Unpaid sale was not removed.');
     EducationFinance::createPayment($student->id, ['sale_id' => $saleId, 'kassa_id' => $kassaId, 'amount' => '20000', 'paid_on' => $startsOn . 'T09:00'], $actor->id);
+    foreach ([null, ['amount' => '50000', 'sold_on' => $startsOn]] as $change) {
+        $rejected = false;
+        try { EducationFinance::changeUnpaidSale($student->id, $saleId, $change); } catch (RuntimeException $exception) { $rejected = true; }
+        stageThreeCheck($rejected, 'A sale with a payment was changed.');
+    }
     $balanceCheck = $pdo->prepare('SELECT amount FROM student_balances WHERE student_id = ? AND balance_type_id = ?');
     $balanceCheck->execute([$student->id, $balanceTypeId]);
     stageThreeCheck((float) $balanceCheck->fetchColumn() === 6.0, 'Payment did not credit the service balance allocation.');

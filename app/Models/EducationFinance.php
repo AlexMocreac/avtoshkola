@@ -98,7 +98,13 @@ final class EducationFinance
         }
         $rows = [];
         foreach (($data['allocations'] ?? []) as $row) {
-            if (!is_array($row) || trim((string) ($row['amount'] ?? '')) === '') { continue; }
+            if (!is_array($row)) { continue; }
+            if (trim((string) ($row['amount'] ?? '')) === '') {
+                foreach (($row['balances'] ?? []) as $value) {
+                    if (trim((string) $value) !== '') { throw new RuntimeException('Укажите сумму оплаты для строки начислений.'); }
+                }
+                continue;
+            }
             $amount = self::money($row['amount']);
             if ($amount === null || (float) $amount <= 0) { throw new RuntimeException('Сумма должна быть больше нуля.'); }
             $values = [];
@@ -139,7 +145,8 @@ final class EducationFinance
     {
         $stmt = Database::connection()->prepare(
             'SELECT s.*, CONCAT_WS(" ", seller.last_name, seller.first_name) AS seller_name,
-                    COALESCE((SELECT SUM(p.amount) FROM student_payments p WHERE p.sale_id = s.id), 0) AS paid_total
+                    COALESCE((SELECT SUM(p.amount) FROM student_payments p WHERE p.sale_id = s.id), 0) AS paid_total,
+                    (SELECT COUNT(*) FROM student_payments p WHERE p.sale_id = s.id) AS payment_count
              FROM student_sales s INNER JOIN users seller ON seller.id = s.sold_by
              WHERE s.student_id = :student_id AND s.status = "active" ORDER BY s.sold_on DESC, s.id DESC'
         );
@@ -177,6 +184,39 @@ final class EducationFinance
             'sold_by' => $userId,
         ]);
         return (int) Database::connection()->lastInsertId();
+    }
+
+    public static function changeUnpaidSale(int $studentId, int $saleId, ?array $data): void
+    {
+        $pdo = Database::connection();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) { $pdo->beginTransaction(); } else { $pdo->exec('SAVEPOINT change_sale'); }
+        try {
+            $stmt = $pdo->prepare('SELECT * FROM student_sales WHERE id = ? AND student_id = ? AND status = "active" FOR UPDATE');
+            $stmt->execute([$saleId, $studentId]);
+            $sale = $stmt->fetch();
+            if (!$sale) { throw new RuntimeException('Продажа не найдена.'); }
+            $stmt = $pdo->prepare('SELECT COUNT(*) FROM student_payments WHERE sale_id = ?');
+            $stmt->execute([$saleId]);
+            if ((int) $stmt->fetchColumn() > 0) { throw new RuntimeException('Продажу с оплатами нельзя изменить или удалить.'); }
+            if ($data === null) {
+                $stmt = $pdo->prepare('UPDATE student_sales SET status = "cancelled" WHERE id = ?');
+                $stmt->execute([$saleId]);
+            } else {
+                $amount = self::money($data['amount'] ?? null);
+                $date = self::date($data['sold_on'] ?? null);
+                if ($amount === null || (float) $amount <= 0 || !$date) { throw new RuntimeException('Укажите корректную сумму и дату продажи.'); }
+                $details = json_decode($sale['service_data'] ?? '', true) ?: [];
+                $service = $sale['service_id'] ? self::service((int) $sale['service_id']) : null;
+                if (!empty($details['no_discounts']) && $service && (float) $amount < (float) $service['price']) { throw new RuntimeException('Для этой услуги скидки запрещены.'); }
+                $stmt = $pdo->prepare('UPDATE student_sales SET amount = ?, sold_on = ?, notes = ? WHERE id = ?');
+                $stmt->execute([$amount, $date, self::nullable($data['notes'] ?? null), $saleId]);
+            }
+            if ($ownsTransaction) { $pdo->commit(); } else { $pdo->exec('RELEASE SAVEPOINT change_sale'); }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction) { $pdo->rollBack(); } else { $pdo->exec('ROLLBACK TO SAVEPOINT change_sale'); }
+            throw $exception;
+        }
     }
 
     public static function payments(int $studentId): array
