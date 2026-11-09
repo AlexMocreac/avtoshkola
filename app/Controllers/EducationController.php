@@ -422,6 +422,28 @@ final class EducationController
         Response::redirect('/education/students/' . $id . '#' . $activeTab);
     }
 
+    public function updatePhoto(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $student = $this->studentOrFail((int) $id, $user);
+        try {
+            $photo = StudentFile::storePhoto((int) $id, $_FILES['photo'] ?? null);
+            if ($photo === null) {
+                throw new RuntimeException('Выберите фотографию.');
+            }
+            StudentProfile::setPhoto((int) $id, $photo);
+            $target = User::find((int) $id);
+            ActivityLog::record('student.photo_updated', 'Обновлена фотография курсанта', $user, $target ? [$target] : [], 'user', (int) $id, [
+                'name' => trim($student['last_name'] . ' ' . $student['first_name']), 'role_key' => User::ROLE_STUDENT,
+            ]);
+            Flash::set('success', 'Фотография курсанта сохранена.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/students/' . (int) $id);
+    }
+
     public function studentAction(string $id): void
     {
         $user = Auth::requireEducationManager();

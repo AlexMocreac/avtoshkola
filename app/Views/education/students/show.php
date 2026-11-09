@@ -11,10 +11,28 @@ $canManageProgress = $canManage || $currentUser->role === \App\Models\User::ROLE
 $isDismissed = $student['training_status'] === 'dismissed';
 ?>
 <section class="student-hero panel reveal">
-    <div class="student-photo"><?php if ($student['photo_path']): ?><img src="<?= e(url('/education/students/' . $student['id'] . '/photo')) ?>" alt="Фото <?= e($fullName) ?>"><?php else: ?><span><?= e(initials($student['first_name'], $student['last_name'])) ?></span><?php endif; ?></div>
+    <div class="student-photo-wrap"><div class="student-photo"><?php if ($student['photo_path']): ?><img src="<?= e(url('/education/students/' . $student['id'] . '/photo')) ?>" alt="&#1060;&#1086;&#1090;&#1086; <?= e($fullName) ?>"><?php else: ?><span><?= e(initials($student['first_name'], $student['last_name'])) ?></span><?php endif; ?></div><?php if ($canManage): ?><button class="student-photo-edit" type="button" data-dialog-open="studentPhotoModal" aria-haspopup="dialog" aria-controls="studentPhotoModal" aria-label="&#1048;&#1079;&#1084;&#1077;&#1085;&#1080;&#1090;&#1100; &#1092;&#1086;&#1090;&#1086;"><?= icon('edit', 14) ?></button><?php endif; ?></div>
+
     <div class="student-hero__copy"><p class="page-eyebrow">Карточка курсанта · №<?= (int) $student['id'] ?></p><h2><?= e($fullName) ?></h2><div class="student-hero__chips"><span class="status-pill status-pill--<?= $student['training_status'] === 'active' ? 'active' : 'blocked' ?>"><i></i><?= e($trainingLabels[$student['training_status']] ?? $student['training_status']) ?></span><span><?= $class ? 'Класс ' . e($class['group_number']) : 'Без класса' ?></span><span><?= $student['driving_allowed'] ? 'Допущен к вождению' : 'Нет допуска к вождению' ?></span></div></div>
     <div class="student-hero__balance"><small>Задолженность</small><strong><?= e(number_format((float) $totals['debt_total'], 2, ',', ' ')) ?> ₽</strong><span>Оплачено <?= e(number_format((float) $totals['paid_total'], 2, ',', ' ')) ?> ₽</span></div>
 </section>
+
+<?php if ($canManage): ?>
+<dialog class="modal modal--compact student-photo-modal" id="studentPhotoModal" aria-labelledby="studentPhotoTitle">
+    <div class="modal__surface">
+        <form method="post" enctype="multipart/form-data" action="<?= e(url('/education/students/' . $student['id'] . '/photo')) ?>">
+            <?= csrf_field() ?>
+            <div class="modal__header"><div><p class="page-eyebrow">&#1050;&#1040;&#1056;&#1058;&#1054;&#1063;&#1050;&#1040; &#1050;&#1059;&#1056;&#1057;&#1040;&#1053;&#1058;&#1040;</p><h2 id="studentPhotoTitle">&#1060;&#1086;&#1090;&#1086;&#1075;&#1088;&#1072;&#1092;&#1080;&#1103;</h2><p>&#1044;&#1086;&#1073;&#1072;&#1074;&#1100;&#1090;&#1077; &#1080;&#1083;&#1080; &#1079;&#1072;&#1084;&#1077;&#1085;&#1080;&#1090;&#1077; &#1092;&#1086;&#1090;&#1086; &#1082;&#1091;&#1088;&#1089;&#1072;&#1085;&#1090;&#1072;.</p></div><button class="button button--ghost modal__close" type="button" data-dialog-close aria-label="&#1047;&#1072;&#1082;&#1088;&#1099;&#1090;&#1100;">&times;</button></div>
+            <div class="modal__body student-photo-modal__body">
+                <div class="student-photo-modal__preview"><img data-student-photo-preview <?php if ($student['photo_path']): ?>src="<?= e(url('/education/students/' . $student['id'] . '/photo')) ?>"<?php else: ?>hidden<?php endif; ?> alt="&#1055;&#1088;&#1077;&#1076;&#1087;&#1088;&#1086;&#1089;&#1084;&#1086;&#1090;&#1088; &#1092;&#1086;&#1090;&#1086;"><span data-student-photo-placeholder <?= $student['photo_path'] ? 'hidden' : '' ?>><?= e(initials($student['first_name'], $student['last_name'])) ?></span></div>
+                <label class="button button--secondary student-photo-modal__choose"><?= icon('upload', 17) ?> &#1042;&#1099;&#1073;&#1088;&#1072;&#1090;&#1100; &#1092;&#1086;&#1090;&#1086;<input class="sr-only" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required data-student-photo-input></label>
+                <small data-student-photo-name>JPG, PNG &#1080;&#1083;&#1080; WEBP &middot; &#1076;&#1086; 5 &#1052;&#1041;</small>
+            </div>
+            <div class="modal__footer"><button class="button button--ghost" type="button" data-dialog-close>&#1054;&#1090;&#1084;&#1077;&#1085;&#1072;</button><button class="button button--primary" type="submit" data-student-photo-save disabled>&#1057;&#1086;&#1093;&#1088;&#1072;&#1085;&#1080;&#1090;&#1100; &#1092;&#1086;&#1090;&#1086;</button></div>
+        </form>
+    </div>
+</dialog>
+<?php endif; ?>
 
 <nav class="anchor-tabs student-tabs" data-student-tabs role="tablist" aria-label="Разделы карточки курсанта"><a class="is-active" href="#main" data-student-tab="main" role="tab" aria-controls="main" aria-selected="true">Главное</a><a href="#personal" data-student-tab="personal" role="tab" aria-controls="personal" aria-selected="false" tabindex="-1">Личное</a><a href="#contracts" data-student-tab="contracts" role="tab" aria-controls="contracts" aria-selected="false" tabindex="-1">Договоры</a><a href="#payments" data-student-tab="payments" role="tab" aria-controls="payments" aria-selected="false" tabindex="-1">Услуги и оплаты</a><a href="#learning" data-student-tab="learning" role="tab" aria-controls="learning" aria-selected="false" tabindex="-1">Обучение</a><a href="#files" data-student-tab="files" role="tab" aria-controls="files" aria-selected="false" tabindex="-1">Файлы</a><a href="#events" data-student-tab="events" role="tab" aria-controls="events" aria-selected="false" tabindex="-1">События</a></nav>
 

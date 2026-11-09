@@ -1852,6 +1852,26 @@
         activateStudentTab(tabFromHash());
     }
 
+    const studentPhotoInput = qs('[data-student-photo-input]');
+    if (studentPhotoInput) {
+        const preview = qs('[data-student-photo-preview]');
+        const placeholder = qs('[data-student-photo-placeholder]');
+        const name = qs('[data-student-photo-name]');
+        const save = qs('[data-student-photo-save]');
+        let previewUrl = '';
+        studentPhotoInput.addEventListener('change', () => {
+            const file = studentPhotoInput.files?.[0];
+            if (!file) return;
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            previewUrl = URL.createObjectURL(file);
+            preview.src = previewUrl;
+            preview.hidden = false;
+            placeholder.hidden = true;
+            name.textContent = file.name;
+            save.disabled = false;
+        });
+    }
+
     qsa('[data-file-input]').forEach((input) => {
         const summary = qs('[data-file-summary]', input.closest('.file-upload'));
         const defaultText = summary?.textContent || '';

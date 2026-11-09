@@ -890,6 +890,18 @@ img, svg { display: block; }
 .student-hero { margin-bottom: 18px; padding: 24px; display: grid; grid-template-columns: 82px minmax(0,1fr) auto; align-items: center; gap: 20px; }
 .student-photo { width: 82px; height: 82px; border-radius: 22px; background: linear-gradient(135deg,#eef2ff,#dbe3ff); display: grid; place-items: center; overflow: hidden; }
 .student-photo img { width: 100%; height: 100%; object-fit: cover; }.student-photo > span { color: var(--accent-deep); font-size: 1.45rem; font-weight: 850; }
+.student-photo-wrap { position: relative; width: 82px; }
+.student-photo-edit { position: absolute; right: -6px; bottom: -6px; width: 29px; height: 29px; padding: 0; border: 2px solid var(--surface); border-radius: 10px; background: var(--accent-deep); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 3px 9px rgba(48,75,189,.25); transition: transform var(--transition), background var(--transition); }
+.student-photo-edit:hover { transform: translateY(-2px); background: var(--accent); }
+.student-photo-edit:focus-visible, .student-photo-modal__choose:focus-within { outline: 3px solid #aabaf5; outline-offset: 3px; }
+.student-photo-modal__body { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.student-photo-modal__preview { width: 152px; height: 152px; border: 5px solid #fff; border-radius: 32px; background: linear-gradient(135deg,#eef2ff,#dbe3ff); box-shadow: 0 8px 28px rgba(48,75,189,.13); display: grid; place-items: center; overflow: hidden; }
+.student-photo-modal__preview img { width: 100%; height: 100%; object-fit: cover; }
+.student-photo-modal__preview span { color: var(--accent-deep); font-size: 2.5rem; font-weight: 850; }
+.student-photo-modal__preview [hidden] { display: none; }
+.student-photo-modal__choose { cursor: pointer; margin-top: 4px; }
+.student-photo-modal__body small { max-width: 100%; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 700px) { .student-photo-wrap { width: 64px; } }
 .student-hero h2 { margin: 3px 0 11px; font-size: 1.65rem; }
 .student-hero__chips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }.student-hero__chips > span:not(.status-pill) { padding: 7px 10px; border-radius: 999px; background: var(--surface-soft); color: var(--muted-dark); font-size: .75rem; font-weight: 700; }
 .student-hero__balance { padding-left: 24px; border-left: 1px solid var(--line); display: flex; flex-direction: column; text-align: right; }.student-hero__balance small,.student-hero__balance span { color: var(--muted); }.student-hero__balance strong { margin: 5px 0; font-size: 1.35rem; }

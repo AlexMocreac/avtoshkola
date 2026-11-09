@@ -82,6 +82,7 @@ $router->post('/education/students/{id}/payments', [EducationController::class, 
 $router->post('/education/students/{id}/checkpoints/{checkpointId}', [EducationController::class, 'setCheckpoint']);
 $router->post('/education/students/{id}/balances', [EducationController::class, 'updateBalances']);
 $router->post('/education/students/{id}/files', [EducationController::class, 'uploadFile']);
+$router->post('/education/students/{id}/photo', [EducationController::class, 'updatePhoto']);
 $router->get('/education/students/{id}/photo', [EducationController::class, 'photo']);
 $router->get('/education/students/{id}/contract/print', [EducationController::class, 'printContract']);
 $router->get('/education/student-files/{id}', [EducationController::class, 'downloadFile']);
