@@ -541,7 +541,7 @@ img, svg { display: block; }
 .lead-column.is-drop-target .lead-drop-slot__icon { color: #fff; border-color: var(--accent); background: var(--accent); transform: scale(1.1); }
 .lead-column.is-drop-target .lead-column__header b { color: var(--accent-deep); background: #fff; }
 .lead-kanban-card.is-saving { opacity: .65; cursor: progress; }
-.lead-kanban-card.is-saving::after { content: "Сохраняем…"; padding: 5px 9px; color: #fff; border-radius: 8px; background: var(--accent); position: absolute; right: 8px; bottom: 8px; font-size: 0.875rem; box-shadow: 0 3px 10px rgba(71,104,219,.2); }
+.lead-kanban-card.is-saving::after { content: "РЎРѕС…СЂР°РЅСЏРµРјвЂ¦"; padding: 5px 9px; color: #fff; border-radius: 8px; background: var(--accent); position: absolute; right: 8px; bottom: 8px; font-size: 0.875rem; box-shadow: 0 3px 10px rgba(71,104,219,.2); }
 @keyframes lead-slot-appear { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 @media (pointer: coarse) { .lead-drag-handle { width: 36px; height: 40px; } }
 .lead-kanban-card__actions { margin-top: 10px; display: flex; align-items: center; gap: 5px; }.lead-kanban-card__actions form { margin: 0; }.lead-kanban-card__actions .icon-button { width: 30px; height: 30px; border-radius: 9px; }.lead-kanban-card__actions .button--contract { min-width: 0; margin-left: auto; padding: 0 9px; color: var(--accent-deep); border: 1px solid #d7dffd; background: var(--accent-soft); box-shadow: none; }
@@ -726,7 +726,7 @@ img, svg { display: block; }
 .class-list-preview > summary { padding: 13px 22px; color: var(--accent-deep); cursor: pointer; list-style: none; font-size: .78rem; font-weight: 800; }
 .class-list-preview > summary::-webkit-details-marker { display: none; }
 .class-list-preview > summary::before { content: '+'; width: 20px; height: 20px; margin-right: 8px; border-radius: 6px; background: var(--accent-soft); display: inline-grid; place-items: center; }
-.class-list-preview[open] > summary::before { content: '−'; }
+.class-list-preview[open] > summary::before { content: 'в€’'; }
 .class-list-preview > summary span { margin-left: 5px; color: var(--muted); }
 .class-list-preview .data-table-wrap { border-top: 1px solid var(--line); }
 
@@ -981,3 +981,21 @@ button.checkpoint-row { cursor: pointer; }.checkpoint-row > span:first-child { w
 .sale-installment-controls input { border: 1px solid #dce5e8; border-radius: 8px; padding: 10px; }
 .sale-review { line-height: 2; }
 @media (max-width: 600px) { .sale-fields { grid-template-columns: 1fr; } .sale-progress { padding-inline: 16px; } }
+
+/* Collapsible sidebar menu groups */
+.nav-group { min-width: 0; }
+.nav-group__heading { min-height: 44px; padding: 0 13px; border-radius: 13px; color: #fff; background: rgba(255, 255, 255, .11); display: flex; align-items: center; gap: 8px; font-size: .8125rem; font-weight: 800; cursor: pointer; list-style: none; }
+.nav-group__heading::-webkit-details-marker { display: none; }
+.nav-group__heading:hover, .nav-group__heading:focus-visible { color: #fff; background: rgba(255, 255, 255, .08); }
+.nav-group__icon { width: 22px; height: 22px; flex: 0 0 22px; display: grid; place-items: center; }
+.nav-group__title { flex: 1; min-width: 0; overflow-wrap: normal; }
+.nav-group__arrow { display: flex; transition: transform var(--transition); }
+.nav-group[open] > .nav-group__heading .nav-group__arrow { transform: rotate(90deg); }
+.nav-group__items { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 5px 23px; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, .2); }
+.nav-group__items .nav-item { min-height: 40px; color: rgba(255, 255, 255, .72); font-weight: 600; }
+.nav-group__items .nav-item:hover, .nav-group__items .nav-item.is-active { color: #fff; }
+@media (min-width: 961px) {
+    .is-collapsed .nav-group__heading { justify-content: center; padding: 0; }
+    .is-collapsed .nav-group__title, .is-collapsed .nav-group__arrow { display: none; }
+    .is-collapsed .nav-group__items { margin-left: 0; padding-left: 0; border-left: 0; }
+}

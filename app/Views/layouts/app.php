@@ -39,7 +39,9 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
             </div>
 
             <nav class="sidebar__nav">
-                <p class="nav-label">Рабочее пространство</p>
+                <details class="nav-group" open>
+                        <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('grid') ?></span><span class="nav-group__title">Рабочее пространство</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
+                        <div class="nav-group__items">
                 <a class="nav-item <?= is_active_route('/dashboard') ? 'is-active' : '' ?>" href="<?= e(url('/dashboard')) ?>">
                     <span class="nav-item__icon"><?= icon('grid') ?></span>
                     <span class="nav-item__label">Главная</span>
@@ -60,7 +62,28 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                         <span class="nav-item__label">Предупреждения</span>
                         <span class="nav-item__badge <?= $layoutWarnings === 0 ? 'is-hidden' : '' ?>"><?= $layoutWarnings ?></span>
                     </a> -->
-                    <p class="nav-label nav-label--section">CRM</p>
+                <?php endif; ?>
+                <a class="nav-item <?= is_active_route('/calendar') ? 'is-active' : '' ?>" href="<?= e(url('/calendar')) ?>">
+                    <span class="nav-item__icon"><?= icon('calendar') ?></span>
+                    <span class="nav-item__label">Календарь</span>
+                </a>
+                <?php if ($currentUser->isStudent()): ?>
+                    <a class="nav-item <?= is_active_route('/education/students/' . $currentUser->id) ? 'is-active' : '' ?>" href="<?= e(url('/education/students/' . $currentUser->id)) ?>">
+                        <span class="nav-item__icon"><?= icon('user') ?></span>
+                        <span class="nav-item__label">Моё обучение</span>
+                    </a>
+                <?php endif; ?>
+                <a class="nav-item <?= is_active_route('/chat') ? 'is-active' : '' ?>" href="<?= e(url('/chat')) ?>">
+                    <span class="nav-item__icon"><?= icon('message') ?></span>
+                    <span class="nav-item__label">Сообщения</span>
+                    <span class="nav-item__badge <?= $layoutUnread === 0 ? 'is-hidden' : '' ?>" id="navUnreadBadge"><?= $layoutUnread ?></span>
+                </a>
+                </div>
+                </details>
+                <?php if ($currentUser->canUseCrm()): ?>
+                    <details class="nav-group" open>
+                        <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('users') ?></span><span class="nav-group__title">CRM</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
+                        <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/crm/leads') ? 'is-active' : '' ?>" href="<?= e(url('/crm/leads')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
                         <span class="nav-item__label">Клиенты и лиды</span>
@@ -69,9 +92,13 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                         <span class="nav-item__icon"><?= icon('file') ?></span>
                         <span class="nav-item__label">Договоры</span>
                     </a>
+                        </div>
+                    </details>
                 <?php endif; ?>
                 <?php if ($currentUser->canManageUsers()): ?>
-                    <p class="nav-label nav-label--section">Администрирование</p>
+                    <details class="nav-group" open>
+                        <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('shield') ?></span><span class="nav-group__title">Администрирование</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
+                        <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/students') ? 'is-active' : '' ?>" href="<?= e(url('/students')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
                         <span class="nav-item__label">Учётные записи</span>
@@ -80,9 +107,13 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                         <span class="nav-item__icon"><?= icon('shield') ?></span>
                         <span class="nav-item__label">Сотрудники</span>
                     </a>
+                        </div>
+                    </details>
                 <?php endif; ?>
                 <?php if ($currentUser->canUseEducation()): ?>
-                    <p class="nav-label nav-label--section">Обучение</p>
+                    <details class="nav-group" open>
+                        <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('book-open') ?></span><span class="nav-group__title">Обучение</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
+                        <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/education/classes') ? 'is-active' : '' ?>" href="<?= e(url('/education/classes')) ?>">
                         <span class="nav-item__icon"><?= icon('users') ?></span>
                         <span class="nav-item__label">Учебные группы</span>
@@ -115,22 +146,9 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                             <span class="nav-item__label">Кассы</span>
                         </a>
                     <?php endif; ?>
+                        </div>
+                    </details>
                 <?php endif; ?>
-                <a class="nav-item <?= is_active_route('/calendar') ? 'is-active' : '' ?>" href="<?= e(url('/calendar')) ?>">
-                    <span class="nav-item__icon"><?= icon('calendar') ?></span>
-                    <span class="nav-item__label">Календарь</span>
-                </a>
-                <?php if ($currentUser->isStudent()): ?>
-                    <a class="nav-item <?= is_active_route('/education/students/' . $currentUser->id) ? 'is-active' : '' ?>" href="<?= e(url('/education/students/' . $currentUser->id)) ?>">
-                        <span class="nav-item__icon"><?= icon('user') ?></span>
-                        <span class="nav-item__label">Моё обучение</span>
-                    </a>
-                <?php endif; ?>
-                <a class="nav-item <?= is_active_route('/chat') ? 'is-active' : '' ?>" href="<?= e(url('/chat')) ?>">
-                    <span class="nav-item__icon"><?= icon('message') ?></span>
-                    <span class="nav-item__label">Сообщения</span>
-                    <span class="nav-item__badge <?= $layoutUnread === 0 ? 'is-hidden' : '' ?>" id="navUnreadBadge"><?= $layoutUnread ?></span>
-                </a>
             </nav>
 
             <div class="sidebar__footer">
