@@ -165,7 +165,7 @@ final class StudyClass
     public static function students(int $classId): array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT u.*, ce.joined_on, sp.training_status, sp.driving_allowed,
+            'SELECT u.*, ce.joined_on, sp.training_status, sp.driving_allowed, sp.photo_path,
                     COALESCE((SELECT SUM(s.amount) FROM student_sales s WHERE s.student_id = u.id AND s.status = "active"), 0) AS sold_total,
                     COALESCE((SELECT SUM(p.amount) FROM student_payments p WHERE p.student_id = u.id), 0) AS paid_total
              FROM class_enrollments ce

@@ -743,6 +743,15 @@
         userForm.reset();
         clearUserErrors();
         const editing = Boolean(user);
+        const photo = qs('[data-user-photo]', userForm);
+        const photoPlaceholder = qs('[data-user-photo-placeholder]', userForm);
+        if (photo && photoPlaceholder) {
+            photo.hidden = !user?.photo_url;
+            if (user?.photo_url) photo.src = user.photo_url;
+            else photo.removeAttribute('src');
+            photoPlaceholder.hidden = Boolean(user?.photo_url);
+            photoPlaceholder.textContent = [user?.first_name, user?.last_name].filter(Boolean).map((name) => Array.from(name.trim())[0] || '').join('').toUpperCase();
+        }
         const noun = userForm.dataset.userGroup === 'students' ? 'курсанта' : 'сотрудника';
         userForm.dataset.mode = editing ? 'edit' : 'create';
         userForm.dataset.userId = editing ? String(user.id) : '';
