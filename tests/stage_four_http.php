@@ -14,7 +14,7 @@ $studentCookies = tempnam(sys_get_temp_dir(), 'avto-stage-four-student-');
 $pdo = Database::connection();
 $suffix = bin2hex(random_bytes(5));
 $password = 'StageFourHttp123!';
-$ids = ['manager' => 0, 'teacher' => 0, 'student' => 0, 'created_student' => 0, 'created_contract' => 0, 'class_folder' => 0, 'program_folder' => 0, 'program' => 0, 'checkpoint' => 0, 'balance_type' => 0, 'class' => 0];
+$ids = ['manager' => 0, 'teacher' => 0, 'student' => 0, 'created_student' => 0, 'created_contract' => 0, 'class_folder' => 0, 'parent_folder' => 0, 'program_folder' => 0, 'program' => 0, 'checkpoint' => 0, 'balance_type' => 0, 'class' => 0];
 
 function stageFourHttpCall(string $method, string $url, string $cookieFile, array $data = []): array
 {
@@ -106,6 +106,32 @@ try {
     $lookup = $pdo->prepare('SELECT id FROM class_folders WHERE name = :name');
     $lookup->execute(['name' => $classFolderName]);
     $ids['class_folder'] = (int) $lookup->fetchColumn();
+
+    $parentFolderName = 'HTTP4 родитель ' . $suffix;
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders', $managerCookies, [
+        '_token' => $token, 'name' => $parentFolderName, 'status' => 'active',
+    ]), 302, 'parent-folder-create');
+    $lookup->execute(['name' => $parentFolderName]);
+    $ids['parent_folder'] = (int) $lookup->fetchColumn();
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders/' . $ids['class_folder'] . '/move', $managerCookies, [
+        '_token' => $token, 'parent_id' => $ids['parent_folder'],
+    ]), 302, 'folder-move');
+    $parentLookup = $pdo->prepare('SELECT parent_id FROM class_folders WHERE id = :id');
+    $parentLookup->execute(['id' => $ids['class_folder']]);
+    if ((int) $parentLookup->fetchColumn() !== $ids['parent_folder']) throw new RuntimeException('Folder move was not saved.');
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders/' . $ids['parent_folder'] . '/move', $managerCookies, [
+        '_token' => $token, 'parent_id' => $ids['class_folder'],
+    ]), 302, 'folder-cycle-rejected');
+    $parentLookup->execute(['id' => $ids['parent_folder']]);
+    if ($parentLookup->fetchColumn() !== null) throw new RuntimeException('Folder cycle was allowed.');
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders/' . $ids['class_folder'] . '/move', $managerCookies, [
+        '_token' => $token, 'parent_id' => '',
+    ]), 302, 'folder-move-to-root');
+    $parentLookup->execute(['id' => $ids['class_folder']]);
+    if ($parentLookup->fetchColumn() !== null) throw new RuntimeException('Folder was not moved to the top level.');
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders/' . $ids['class_folder'] . '/move', $managerCookies, [
+        '_token' => $token, 'parent_id' => $ids['parent_folder'],
+    ]), 302, 'folder-move-back');
 
     $programFolderName = 'HTTP4 программы ' . $suffix;
     stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/program-folders', $managerCookies, [
@@ -222,6 +248,15 @@ try {
     }
 
     $teacherToken = stageFourLogin($baseUrl, $teacherCookies, 'stage4.teacher.' . $suffix, $password);
+    $teacherTree = stageFourHttpCall('GET', $baseUrl . '/education/classes', $teacherCookies);
+    stageFourExpect($teacherTree, 200, 'teacher-folder-tree');
+    if (!str_contains($teacherTree['body'], $parentFolderName) || !str_contains($teacherTree['body'], $classFolderName)) throw new RuntimeException('Teacher cannot see the ancestor folder.');
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/class-folders/' . $ids['class_folder'] . '/move', $teacherCookies, [
+        '_token' => $teacherToken, 'parent_id' => '',
+    ]), 403, 'teacher-folder-move-denied');
+    $parentLookup->execute(['id' => $ids['class_folder']]);
+    if ((int) $parentLookup->fetchColumn() !== $ids['parent_folder']) throw new RuntimeException('Teacher moved a folder.');
+
     stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/checkpoints/' . $ids['checkpoint'], $teacherCookies, [
         '_token' => $teacherToken, 'completed' => '1', 'class_id' => $ids['class'],
     ]), 302, 'teacher-checkpoint-toggle');
@@ -258,6 +293,7 @@ try {
     if ($ids['balance_type']) $pdo->prepare('DELETE FROM student_balance_types WHERE id = :id')->execute(['id' => $ids['balance_type']]);
     if ($ids['program']) $pdo->prepare('DELETE FROM training_programs WHERE id = :id')->execute(['id' => $ids['program']]);
     if ($ids['class_folder']) $pdo->prepare('DELETE FROM class_folders WHERE id = :id')->execute(['id' => $ids['class_folder']]);
+    if ($ids['parent_folder']) $pdo->prepare('DELETE FROM class_folders WHERE id = :id')->execute(['id' => $ids['parent_folder']]);
     if ($ids['program_folder']) $pdo->prepare('DELETE FROM training_program_folders WHERE id = :id')->execute(['id' => $ids['program_folder']]);
     foreach (['created_student', 'student', 'teacher', 'manager'] as $key) {
         if ($ids[$key]) $pdo->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $ids[$key]]);

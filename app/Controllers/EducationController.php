@@ -237,6 +237,27 @@ final class EducationController
         ]);
     }
 
+    public function moveClass(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $class = $this->classOrFail((int) $id, $user);
+        $folderId = filter_input(INPUT_POST, 'folder_id', FILTER_VALIDATE_INT);
+        $folder = $folderId ? EducationCatalog::findClassFolder($folderId) : null;
+        if (!$folder || $folder['status'] !== 'active') {
+            Flash::set('error', 'Выберите доступную папку.');
+            Response::redirect('/education/classes?folder_id=' . (int) $class['folder_id']);
+        }
+        if ((int) $class['folder_id'] !== $folderId) {
+            StudyClass::moveToFolder((int) $id, $folderId, $user->id);
+            ActivityLog::record('class.moved', 'Класс перемещён в другую папку', $user, [], 'class', (int) $id, [
+                'group_number' => $class['group_number'], 'folder_from' => $class['folder_name'], 'folder_to' => $folder['name'],
+            ]);
+            Flash::set('success', 'Класс перемещён в папку «' . $folder['name'] . '».');
+        }
+        Response::redirect('/education/classes?folder_id=' . $folderId . '&class_id=' . (int) $id);
+    }
+
     public function updateClass(string $id): void
     {
         $user = Auth::requireEducationManager();

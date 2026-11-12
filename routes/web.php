@@ -61,8 +61,10 @@ $router->get('/education', static function (): void {
 $router->get('/education/classes', [EducationController::class, 'classes']);
 $router->post('/education/classes', [EducationController::class, 'createClass']);
 $router->post('/education/class-folders', [EducationCatalogController::class, 'createClassFolder']);
+$router->post('/education/class-folders/{id}/move', [EducationCatalogController::class, 'moveClassFolder']);
 $router->post('/education/class-folders/{id}/update', [EducationCatalogController::class, 'updateClassFolder']);
 $router->get('/education/classes/{id}', [EducationController::class, 'showClass']);
+$router->post('/education/classes/{id}/move', [EducationController::class, 'moveClass']);
 $router->post('/education/classes/{id}/update', [EducationController::class, 'updateClass']);
 $router->post('/education/classes/{id}/schedule', [EducationController::class, 'regenerateSchedule']);
 $router->post('/education/classes/{id}/students', [EducationController::class, 'enrollStudent']);

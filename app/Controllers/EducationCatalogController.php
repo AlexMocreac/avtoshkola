@@ -35,6 +35,23 @@ final class EducationCatalogController
         Response::redirect('/education/classes');
     }
 
+    public function moveClassFolder(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $rawParent = (string) ($_POST['parent_id'] ?? '');
+        try {
+            if ($rawParent !== '' && (!ctype_digit($rawParent) || (int) $rawParent < 1)) throw new RuntimeException('Выберите доступную папку.');
+            $folder = EducationCatalog::findClassFolder((int) $id);
+            EducationCatalog::moveClassFolder((int) $id, $rawParent === '' ? null : (int) $rawParent, $user->id);
+            ActivityLog::record('class_folder.moved', 'Папка учебных классов перемещена', $user, [], 'class_folder', (int) $id, ['name' => $folder['name'] ?? '', 'parent_id' => $rawParent]);
+            Flash::set('success', 'Папка перемещена.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/classes?folder_id=' . (int) $id);
+    }
+
     public function updateClassFolder(string $id): void
     {
         $user = Auth::requireEducationManager();

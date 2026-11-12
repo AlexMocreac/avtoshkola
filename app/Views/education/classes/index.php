@@ -17,31 +17,33 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
     <?php if ($currentUser->canManageEducation()): ?><div class="page-actions"><a class="button button--secondary" href="<?= e(url('/education/programs')) ?>"><?= icon('book-open', 17) ?> Учебные программы</a><a class="button button--secondary" href="<?= e(url('/education/checkpoints')) ?>"><?= icon('check-square', 17) ?> Контрольные точки</a></div><?php endif; ?>
 </section>
 
-<div class="catalog-layout class-browser">
+<div class="catalog-layout class-browser" <?= $currentUser->canManageEducation() ? 'data-class-browser' : '' ?>>
     <aside class="panel catalog-folders class-navigator reveal">
         <div class="panel__header"><div><p class="page-eyebrow">Навигатор</p><h3>Папки и классы</h3></div><span class="catalog-count"><?= count($folders) + count($allClasses) ?></span></div>
+        <?php if ($currentUser->canManageEducation()): ?><p class="class-drag-hint">Перетащите группу или папку в другую папку, либо используйте меню ⋮</p><?php endif; ?>
+        <?php if ($currentUser->canManageEducation()): ?><div class="class-tree__root-drop" data-drop-root>На верхний уровень</div><?php endif; ?>
         <nav class="class-tree" aria-label="Папки и учебные группы">
             <?php foreach ($folders as $folder): $folderClasses = $classesByFolder[(int) $folder['id']] ?? []; $folderActive = (int) $folder['id'] === (int) $selectedFolderId; ?>
-                <section class="class-tree__branch <?= $folderActive ? 'is-active' : '' ?>">
-                    <a class="class-tree__folder <?= $folderActive && !$selectedClass ? 'is-active' : '' ?>" href="<?= e(url('/education/classes?folder_id=' . $folder['id'])) ?>">
+                <section class="class-tree__branch <?= $folderActive ? 'is-active' : '' ?>" data-drop-folder="<?= (int) $folder['id'] ?>" data-parent-folder="<?= (int) ($folder['parent_id'] ?? 0) ?>" style="--folder-depth: <?= (int) $folder['depth'] ?>">
+                    <div class="class-tree__folder-row"><a class="class-tree__folder <?= $folderActive && !$selectedClass ? 'is-active' : '' ?>" <?= $currentUser->canManageEducation() ? 'draggable="true" data-drag-folder="' . (int) $folder['id'] . '"' : '' ?> href="<?= e(url('/education/classes?folder_id=' . $folder['id'])) ?>">
                         <span class="folder-mark"><?= icon('folder', 19) ?></span>
                         <span><strong><?= e($folder['name']) ?></strong><small><?= (int) $folder['class_count'] ?> классов · <?= (int) $folder['student_count'] ?> курсантов</small></span>
                         <?= icon('chevron-right', 15) ?>
-                    </a>
+                    </a><?php if ($currentUser->canManageEducation()): ?><button type="button" class="class-move-button class-folder-move" data-move-folder-id="<?= (int) $folder['id'] ?>" data-folder-name="<?= e($folder['name']) ?>" aria-label="Переместить папку <?= e($folder['name']) ?>" title="Переместить папку">⋮</button><?php endif; ?></div>
                     <div class="class-tree__classes">
                         <?php foreach ($folderClasses as $treeClass): ?>
-                            <a class="class-tree__class <?= (int) $treeClass['id'] === (int) $selectedClassId ? 'is-active' : '' ?>" href="<?= e(url('/education/classes?folder_id=' . $folder['id'] . '&class_id=' . $treeClass['id'])) ?>">
+                            <div class="class-tree__class-row"><a class="class-tree__class <?= (int) $treeClass['id'] === (int) $selectedClassId ? 'is-active' : '' ?>" <?= $currentUser->canManageEducation() ? 'draggable="true" data-drag-class="' . (int) $treeClass['id'] . '" data-source-folder="' . (int) $folder['id'] . '"' : '' ?> href="<?= e(url('/education/classes?folder_id=' . $folder['id'] . '&class_id=' . $treeClass['id'])) ?>">
                                 <span class="class-tree__line" aria-hidden="true"></span>
                                 <span class="class-tree__class-icon"><?= icon('users', 15) ?></span>
                                 <span><strong><?= e($treeClass['group_number']) ?></strong><small><?= e($treeClass['name']) ?> · <?= (int) $treeClass['student_count'] ?> курс.</small></span>
-                            </a>
+                            </a><?php if ($currentUser->canManageEducation()): ?><button type="button" class="class-move-button" data-move-class="<?= (int) $treeClass['id'] ?>" data-source-folder="<?= (int) $folder['id'] ?>" data-class-name="<?= e($treeClass['group_number']) ?>" aria-label="Переместить группу <?= e($treeClass['group_number']) ?>" title="Переместить в другую папку">⋮</button><?php endif; ?></div>
                         <?php endforeach; ?>
                         <?php if (!$folderClasses): ?><span class="class-tree__empty">Классов пока нет</span><?php endif; ?>
                     </div>
                 </section>
             <?php endforeach; ?>
         </nav>
-        <?php if ($currentUser->canManageEducation()): ?><form class="catalog-add-form" method="post" action="<?= e(url('/education/class-folders')) ?>"><?= csrf_field() ?><input name="name" required maxlength="120" placeholder="Новая папка"><input type="hidden" name="status" value="active"><button class="icon-button" type="submit" aria-label="Добавить папку"><?= icon('plus', 17) ?></button></form><?php endif; ?>
+        <?php if ($currentUser->canManageEducation()): ?><form class="catalog-add-form" method="post" action="<?= e(url('/education/class-folders')) ?>"><?= csrf_field() ?><input name="name" required maxlength="120" placeholder="Новая папка"><select name="parent_id" aria-label="Родительская папка"><option value="">Верхний уровень</option><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>"><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select><input type="hidden" name="status" value="active"><button class="icon-button" type="submit" aria-label="Добавить папку"><?= icon('plus', 17) ?></button></form><?php endif; ?>
     </aside>
 
     <main class="catalog-content">
@@ -96,7 +98,7 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
                     <form method="post" action="<?= e(url('/education/classes')) ?>" class="stage-form" data-submit-loading>
                         <?= csrf_field() ?>
                         <div class="form-grid form-grid--three">
-                            <label class="field"><span class="field__label">Папка <b>*</b></span><span class="field__control"><select name="folder_id" required><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>" <?= (int) $folder['id'] === (int) $selectedFolderId ? 'selected' : '' ?>><?= e($folder['name']) ?></option><?php endforeach; ?></select></span></label>
+                            <label class="field"><span class="field__label">Папка <b>*</b></span><span class="field__control"><select name="folder_id" required><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>" <?= (int) $folder['id'] === (int) $selectedFolderId ? 'selected' : '' ?>><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select></span></label>
                             <label class="field"><span class="field__label">Название <b>*</b></span><span class="field__control"><input name="name" required maxlength="120" placeholder="Категория B"></span></label>
                             <label class="field"><span class="field__label">Номер группы <b>*</b></span><span class="field__control"><input name="group_number" required maxlength="80" placeholder="B-2026-01"></span></label>
                             <label class="field"><span class="field__label">Учебный класс</span><span class="field__control"><input name="classroom" maxlength="190" placeholder="Кабинет 3"></span></label>
@@ -129,6 +131,28 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
         <?php endif; ?>
     </main>
 </div>
+
+<?php if ($currentUser->canManageEducation()): ?>
+<dialog class="modal" id="classMoveDialog">
+    <form class="modal__surface" method="post" data-class-move-form data-action-template="<?= e(url('/education/classes/__ID__/move')) ?>">
+        <?= csrf_field() ?>
+        <div class="modal__header"><div><p class="page-eyebrow">Учебные группы</p><h2>Переместить класс</h2><p data-move-label></p></div><button class="icon-button modal__close" type="button" data-dialog-close aria-label="Закрыть"><?= icon('x', 20) ?></button></div>
+        <div class="modal__body"><label class="field"><span class="field__label">Папка назначения</span><span class="field__control"><select name="folder_id" required data-move-folder><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>"><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select></span></label></div>
+        <div class="modal__footer"><button class="button button--ghost" type="button" data-dialog-close>Отмена</button><button class="button button--primary" type="submit">Переместить</button></div>
+    </form>
+</dialog>
+<?php endif; ?>
+
+<?php if ($currentUser->canManageEducation()): ?>
+<dialog class="modal" id="folderMoveDialog">
+    <form class="modal__surface" method="post" data-folder-move-form data-action-template="<?= e(url('/education/class-folders/__ID__/move')) ?>">
+        <?= csrf_field() ?>
+        <div class="modal__header"><div><p class="page-eyebrow">Учебные группы</p><h2>Переместить папку</h2><p data-folder-move-label></p></div><button class="icon-button modal__close" type="button" data-dialog-close aria-label="Закрыть"><?= icon('x', 20) ?></button></div>
+        <div class="modal__body"><label class="field"><span class="field__label">Родительская папка</span><span class="field__control"><select name="parent_id" data-folder-destination><option value="">Верхний уровень</option><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>"><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select></span></label></div>
+        <div class="modal__footer"><button class="button button--ghost" type="button" data-dialog-close>Отмена</button><button class="button button--primary" type="submit">Переместить</button></div>
+    </form>
+</dialog>
+<?php endif; ?>
 
 <?php if ($selectedClass && $currentUser->canManageEducation()): ?>
 <dialog class="modal student-create-modal" id="classStudentModal">

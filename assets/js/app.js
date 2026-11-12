@@ -1281,6 +1281,99 @@
         openDialog(document.getElementById(button.dataset.dialogOpen));
     }));
 
+    // Drag classes and folders, with dialogs for keyboard and touch users.
+    const classBrowser = qs('[data-class-browser]');
+    const classMoveDialog = qs('#classMoveDialog');
+    const classMoveForm = qs('[data-class-move-form]');
+    const folderMoveDialog = qs('#folderMoveDialog');
+    const folderMoveForm = qs('[data-folder-move-form]');
+    if (classBrowser && classMoveForm && folderMoveForm) {
+        const classDestination = qs('[data-move-folder]', classMoveForm);
+        const folderDestination = qs('[data-folder-destination]', folderMoveForm);
+        const branches = qsa('[data-drop-folder]', classBrowser);
+        const parents = Object.fromEntries(branches.map((branch) => [branch.dataset.dropFolder, branch.dataset.parentFolder]));
+        let drag = null;
+        const isWithin = (candidate, ancestor) => {
+            const visited = new Set();
+            while (candidate && candidate !== '0' && !visited.has(candidate)) {
+                if (candidate === ancestor) return true;
+                visited.add(candidate);
+                candidate = parents[candidate];
+            }
+            return false;
+        };
+        const allowed = (destination) => drag && (drag.type === 'class'
+            ? destination !== '' && destination !== drag.source
+            : destination !== (drag.source === '0' ? '' : drag.source) && (!destination || !isWithin(destination, drag.id)));
+        const clearDrag = () => {
+            classBrowser.classList.remove('is-dragging-class', 'is-dragging-folder');
+            qsa('.is-drop-target, .is-drag-source, .is-current-folder, .is-drop-eligible', classBrowser).forEach((el) => el.classList.remove('is-drop-target', 'is-drag-source', 'is-current-folder', 'is-drop-eligible'));
+            drag = null;
+        };
+        const prepareClassMove = (id, source) => {
+            classMoveForm.action = classMoveForm.dataset.actionTemplate.replace('__ID__', id);
+            Array.from(classDestination.options).forEach((option) => { option.disabled = option.value === source; });
+            classDestination.value = Array.from(classDestination.options).find((option) => !option.disabled)?.value || '';
+        };
+        const prepareFolderMove = (id) => {
+            folderMoveForm.action = folderMoveForm.dataset.actionTemplate.replace('__ID__', id);
+            Array.from(folderDestination.options).forEach((option) => { option.disabled = !!option.value && isWithin(option.value, id); });
+            folderDestination.value = parents[id] === '0' ? '' : parents[id];
+        };
+        qsa('[data-move-class]', classBrowser).forEach((button) => button.addEventListener('click', () => {
+            prepareClassMove(button.dataset.moveClass, button.dataset.sourceFolder);
+            qs('[data-move-label]', classMoveDialog).textContent = `Группа ${button.dataset.className}`;
+            openDialog(classMoveDialog);
+        }));
+        qsa('[data-move-folder-id]', classBrowser).forEach((button) => button.addEventListener('click', () => {
+            prepareFolderMove(button.dataset.moveFolderId);
+            qs('[data-folder-move-label]', folderMoveDialog).textContent = button.dataset.folderName;
+            openDialog(folderMoveDialog);
+        }));
+        qsa('[data-drag-class], [data-drag-folder]', classBrowser).forEach((item) => {
+            item.addEventListener('dragstart', (event) => {
+                const id = item.dataset.dragClass || item.dataset.dragFolder;
+                const type = item.dataset.dragClass ? 'class' : 'folder';
+                drag = { type, id, source: type === 'class' ? item.dataset.sourceFolder : parents[id] };
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', id);
+                classBrowser.classList.add(type === 'class' ? 'is-dragging-class' : 'is-dragging-folder');
+                item.classList.add('is-drag-source');
+                branches.forEach((branch) => { if (allowed(branch.dataset.dropFolder)) branch.classList.add('is-drop-eligible'); });
+                if (type === 'class') qs(`[data-drop-folder="${drag.source}"]`, classBrowser)?.classList.add('is-current-folder');
+                if (type === 'folder' && allowed('')) qs('[data-drop-root]', classBrowser)?.classList.add('is-drop-eligible');
+            });
+            item.addEventListener('dragend', clearDrag);
+        });
+        [...branches, qs('[data-drop-root]', classBrowser)].filter(Boolean).forEach((target) => {
+            const destination = target.dataset.dropFolder || '';
+            target.addEventListener('dragover', (event) => {
+                if (!allowed(destination)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                qsa('.is-drop-target', classBrowser).forEach((el) => { if (el !== target) el.classList.remove('is-drop-target'); });
+                target.classList.add('is-drop-target');
+            });
+            target.addEventListener('dragleave', (event) => {
+                if (!target.contains(event.relatedTarget)) target.classList.remove('is-drop-target');
+            });
+            target.addEventListener('drop', (event) => {
+                if (!allowed(destination)) return;
+                event.preventDefault();
+                const form = drag.type === 'class' ? classMoveForm : folderMoveForm;
+                if (drag.type === 'class') {
+                    prepareClassMove(drag.id, drag.source);
+                    classDestination.value = destination;
+                } else {
+                    prepareFolderMove(drag.id);
+                    folderDestination.value = destination;
+                }
+                clearDrag();
+                form.requestSubmit();
+            });
+        });
+    }
+
     const contractForm = qs('#contractForm');
     if (contractForm?.dataset.autoOpen === '1') {
         setEditorMode('contract');

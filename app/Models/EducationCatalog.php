@@ -26,11 +26,40 @@ final class EducationCatalog
                 LEFT JOIN class_enrollments ce ON ce.class_id = c.id AND ce.status = "active"
                 WHERE f.status = "active"
                 GROUP BY f.id
-                ' . ($viewer->role === User::ROLE_TEACHER ? 'HAVING class_count > 0' : '') . '
                 ORDER BY f.sort_order, f.name';
         $stmt = Database::connection()->prepare($sql);
         $stmt->execute($viewer->role === User::ROLE_TEACHER ? ['teacher_id' => $viewer->id] : []);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        $byId = [];
+        foreach ($rows as $row) $byId[(int) $row['id']] = $row;
+        $visible = [];
+        foreach ($rows as $row) {
+            if ($viewer->role !== User::ROLE_TEACHER || (int) $row['class_count'] > 0) {
+                $id = (int) $row['id'];
+                while ($id && isset($byId[$id]) && !isset($visible[$id])) {
+                    $visible[$id] = true;
+                    $id = (int) ($byId[$id]['parent_id'] ?? 0);
+                }
+            }
+        }
+        $children = [];
+        foreach ($rows as $row) {
+            $id = (int) $row['id'];
+            if (!isset($visible[$id])) continue;
+            $parent = (int) ($row['parent_id'] ?? 0);
+            if (!isset($visible[$parent])) $parent = 0;
+            $children[$parent][] = $row;
+        }
+        $ordered = [];
+        $append = static function (int $parent, int $depth) use (&$append, &$ordered, $children): void {
+            foreach ($children[$parent] ?? [] as $row) {
+                $row['depth'] = $depth;
+                $ordered[] = $row;
+                $append((int) $row['id'], $depth + 1);
+            }
+        };
+        $append(0, 0);
+        return $ordered;
     }
 
     public static function findClassFolder(int $id): ?array
@@ -46,6 +75,11 @@ final class EducationCatalog
         if (mb_strlen($name) < 2 || mb_strlen($name) > 120) {
             throw new RuntimeException('Название папки должно содержать от 2 до 120 символов.');
         }
+        $parentId = (int) ($data['parent_id'] ?? 0);
+        if (!$id && $parentId) {
+            $parent = self::findClassFolder($parentId);
+            if (!$parent || $parent['status'] !== 'active') throw new RuntimeException('Выберите доступную родительскую папку.');
+        }
         $payload = [
             'name' => $name,
             'sort_order' => (int) ($data['sort_order'] ?? 0),
@@ -60,11 +94,35 @@ final class EducationCatalog
             return $id;
         }
         $stmt = Database::connection()->prepare(
-            'INSERT INTO class_folders (name, sort_order, status, created_by, updated_by)
-             VALUES (:name, :sort_order, :status, :created_by, :updated_by)'
+            'INSERT INTO class_folders (name, sort_order, status, created_by, updated_by, parent_id)
+             VALUES (:name, :sort_order, :status, :created_by, :updated_by, :parent_id)'
         );
-        $stmt->execute($payload + ['created_by' => $userId]);
+        $stmt->execute($payload + ['created_by' => $userId, 'parent_id' => $parentId ?: null]);
         return (int) Database::connection()->lastInsertId();
+    }
+
+    public static function moveClassFolder(int $id, ?int $parentId, int $userId): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $rows = $pdo->query('SELECT id, parent_id, status FROM class_folders FOR UPDATE')->fetchAll();
+            $folders = [];
+            foreach ($rows as $row) $folders[(int) $row['id']] = $row;
+            if (!isset($folders[$id]) || $folders[$id]['status'] !== 'active') throw new RuntimeException('Папка не найдена.');
+            if ($parentId !== null && (!isset($folders[$parentId]) || $folders[$parentId]['status'] !== 'active')) throw new RuntimeException('Выберите доступную папку.');
+            $seen = [];
+            for ($cursor = $parentId; $cursor !== null; $cursor = isset($folders[$cursor]['parent_id']) ? (int) $folders[$cursor]['parent_id'] : null) {
+                if ($cursor === $id || isset($seen[$cursor])) throw new RuntimeException('Нельзя переместить папку в неё саму или её вложенную папку.');
+                $seen[$cursor] = true;
+            }
+            $stmt = $pdo->prepare('UPDATE class_folders SET parent_id = :parent_id, updated_by = :updated_by WHERE id = :id');
+            $stmt->execute(['parent_id' => $parentId, 'updated_by' => $userId, 'id' => $id]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
     }
 
     public static function defaultClassFolderId(int $userId): int

@@ -704,6 +704,23 @@ img, svg { display: block; }
 .catalog-folders .class-tree a.class-tree__class { min-height: 50px; padding: 7px 8px 7px 0; border-radius: 10px; display: grid; grid-template-columns: 15px 29px minmax(0, 1fr); gap: 7px; }
 .catalog-folders .class-tree a.class-tree__class:hover,
 .catalog-folders .class-tree a.class-tree__class.is-active { color: var(--accent-deep); background: #eef2ff; }
+ .class-drag-hint { margin: 0; padding: 0 18px 5px; color: var(--muted); font-size: .7rem; line-height: 1.45; }
+.class-tree__branch { margin-left: min(calc(var(--folder-depth, 0) * 14px), 70px); }
+.class-tree__folder-row, .class-tree__class-row { display: flex; align-items: center; min-width: 0; }
+.catalog-folders .class-tree .class-tree__folder-row a.class-tree__folder, .catalog-folders .class-tree .class-tree__class-row a.class-tree__class { flex: 1; min-width: 0; }
+.class-move-button { flex: none; width: 28px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #8792aa; font-size: 20px; line-height: 1; cursor: pointer; }
+.class-move-button:hover, .class-move-button:focus-visible { color: var(--accent-deep); background: #e8edff; }
+.class-tree a[draggable="true"] { cursor: grab; }
+.class-tree a[draggable="true"]:active { cursor: grabbing; }
+.class-tree a.is-drag-source { opacity: .4; }
+.class-tree__root-drop { display: none; position: absolute; z-index: 3; top: 76px; left: 10px; right: 10px; padding: 10px; border: 1px dashed #aab9ed; border-radius: 11px; color: var(--accent-deep); background: #f7f9ff; text-align: center; font-size: .75rem; font-weight: 600; }
+.is-dragging-folder .class-tree__root-drop.is-drop-eligible { display: block; }
+.class-tree__branch.is-drop-eligible { border-color: #c6d0f7; background: #f7f9ff; }
+.class-tree__branch.is-drop-target, .class-tree__root-drop.is-drop-target { border-color: var(--accent); background: #e9eeff; box-shadow: 0 0 0 3px rgba(90, 111, 225, .17), 0 8px 20px rgba(71, 104, 219, .13); }
+.class-tree__branch.is-drop-target .class-tree__folder { background: #dce5ff; }
+.class-tree__branch.is-current-folder { opacity: .6; }
+.catalog-add-form select { min-width: 0; max-width: 105px; font-size: .7rem; }
+@media (prefers-reduced-motion: reduce) { .class-tree__branch { transition: none; } }
 .class-tree__line { width: 12px; height: 26px; margin-top: -8px; border-bottom: 1.5px solid #cfd5e2; border-left: 1.5px solid #cfd5e2; border-radius: 0 0 0 8px; }
 .class-tree__class-icon { width: 29px; height: 29px; color: var(--accent); border-radius: 8px; background: #fff; display: grid; place-items: center; box-shadow: 0 3px 9px rgba(71,104,219,.09); }
 .class-tree__class > span:last-child { min-width: 0; display: flex; flex-direction: column; }
@@ -1008,3 +1025,8 @@ button.checkpoint-row { cursor: pointer; }.checkpoint-row > span:first-child { w
 .user-modal__portrait img { width: 100%; height: 100%; object-fit: cover; }
 .user-modal__portrait [hidden] { display: none; }
 @media (max-width: 700px) { .user-modal__layout { grid-template-columns: 1fr; gap: 20px; } .user-modal__photo { grid-column: 1; grid-row: 1; flex-direction: row; } .user-modal__portrait { width: 80px; flex: 0 0 80px; border-radius: 16px; font-size: 1.5rem; } .user-modal__layout .form-grid { grid-row: 2; } }
+
+/* Keep nested folders in tree order on narrow screens. */
+.class-navigator .catalog-add-form { grid-template-columns: minmax(0, 1fr) minmax(0, 105px) 40px; }
+.class-navigator .catalog-add-form select { width: 100%; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; }
+@media (max-width: 960px) { .class-navigator { position: relative; } .catalog-folders .class-tree { display: block; } }

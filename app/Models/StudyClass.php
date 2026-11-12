@@ -71,6 +71,12 @@ final class StudyClass
         return $stmt->fetch() ?: null;
     }
 
+    public static function moveToFolder(int $id, int $folderId, int $userId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE student_classes SET folder_id = :folder_id, updated_by = :updated_by WHERE id = :id');
+        $stmt->execute(['folder_id' => $folderId, 'updated_by' => $userId, 'id' => $id]);
+    }
+
     public static function create(array $data, int $userId): int
     {
         $data = array_merge($data, self::references($data, $userId));
