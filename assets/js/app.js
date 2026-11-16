@@ -860,6 +860,72 @@
         }
     });
 
+    const studentAccessModal = qs('#studentAccessModal');
+    const studentAccessForm = qs('#studentAccessForm');
+    let selectedAccessButton = null;
+    let studentAccessSaving = false;
+    qsa('[data-student-access]').forEach((button) => button.addEventListener('click', () => {
+        if (studentAccessSaving) return;
+        selectedAccessButton = button;
+        const active = button.dataset.accessActive === '1';
+        const expired = button.dataset.accessExpired === '1';
+        studentAccessForm.dataset.studentId = button.dataset.studentId;
+        studentAccessForm.dataset.active = active ? '1' : '0';
+        studentAccessForm.dataset.expired = expired ? '1' : '0';
+        qs('[data-access-name]', studentAccessForm).textContent = button.dataset.studentName;
+        qs('[data-access-description]', studentAccessForm).textContent = active
+            ? 'Доступ открыт. При закрытии курсант не сможет войти в систему.'
+            : expired ? 'Срок доступа истёк. Укажите новый срок, чтобы открыть доступ.' : 'Доступ закрыт. Откройте доступ, чтобы курсант снова мог войти в систему.';
+        qs('[data-access-renew]', studentAccessForm).hidden = active || !expired;
+        qs('[name="access_months"]', studentAccessForm).value = button.dataset.accessMonths;
+        const submit = qs('[data-access-submit]', studentAccessForm);
+        submit.textContent = active ? 'Закрыть доступ' : 'Открыть доступ';
+        submit.className = `button ${active ? 'button--danger' : 'button--primary'}`;
+        qs('[data-access-error]', studentAccessForm).classList.add('is-hidden');
+        openDialog(studentAccessModal);
+    }));
+    studentAccessForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (studentAccessSaving || !selectedAccessButton) return;
+        studentAccessSaving = true;
+        const button = selectedAccessButton;
+        const active = studentAccessForm.dataset.active === '1';
+        const data = new FormData(studentAccessForm);
+        data.set('status', 'blocked');
+        data.set('renew', studentAccessForm.dataset.expired);
+        setFormLoading(studentAccessForm, true);
+        try {
+            const endpoint = active ? 'status' : 'grant-access';
+            const result = await request(path(`/users/${studentAccessForm.dataset.studentId}/${endpoint}`), { method: 'POST', body: data });
+            const accessActive = !active;
+            const accessLabel = accessActive ? 'Доступ открыт' : 'Доступ закрыт';
+            button.dataset.accessActive = accessActive ? '1' : '0';
+            button.classList.toggle('is-active', accessActive);
+            button.classList.toggle('is-inactive', !accessActive);
+            button.title = accessLabel;
+            button.setAttribute('aria-label', `${accessLabel}: ${button.dataset.studentName}`);
+            if (accessActive && data.get('renew') === '1') {
+                button.dataset.accessExpired = '0';
+                button.dataset.accessMonths = data.get('access_months');
+                const row = button.closest('[data-user-row]');
+                if (row?.dataset.user) {
+                    const user = JSON.parse(row.dataset.user);
+                    user.access_months = data.get('access_months') || null;
+                    row.dataset.user = JSON.stringify(user);
+                }
+            }
+            closeDialog(studentAccessModal);
+            toast(result.message);
+        } catch (error) {
+            const alert = qs('[data-access-error]', studentAccessForm);
+            alert.textContent = error.message;
+            alert.classList.remove('is-hidden');
+        } finally {
+            studentAccessSaving = false;
+            setFormLoading(studentAccessForm, false);
+        }
+    });
+
     qsa('[data-user-status]').forEach((button) => button.addEventListener('click', () => {
         const user = JSON.parse(button.closest('[data-user-row]').dataset.user);
         const willBlock = user.status === 'active';

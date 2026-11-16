@@ -126,6 +126,7 @@ $router->get('/staff', [UserController::class, 'staff']);
 $router->post('/users', [UserController::class, 'create']);
 $router->post('/users/{id}/update', [UserController::class, 'update']);
 $router->post('/users/{id}/status', [UserController::class, 'status']);
+$router->post('/users/{id}/grant-access', [UserController::class, 'grantStudentAccess']);
 $router->post('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
 $router->post('/users/{id}/delete', [UserController::class, 'delete']);
 

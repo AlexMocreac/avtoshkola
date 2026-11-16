@@ -857,6 +857,12 @@ img, svg { display: block; }
 .folder-class__header h3 { margin: 0; font-size: 1.15rem; }.folder-class__header p:last-child { margin: 6px 0 0; color: var(--muted); font-size: .8125rem; }
 .folder-class__header > div:last-child { display: flex; align-items: center; gap: 9px; }
 .class-roster-table { min-width: 900px; }
+.student-access-icon { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; }
+button.student-access-icon { cursor: pointer; }
+button.student-access-icon:hover { background: var(--surface-muted, #f1f4fa); }
+.student-access-icon.is-active { color: #25885b; }
+.student-access-icon.is-inactive { color: #a4aab5; }
+[data-access-renew][hidden] { display: none; }
 .checkpoint-strip, .balance-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .checkpoint-strip form { margin: 0; }
 .checkpoint-chip { min-width: 32px; min-height: 27px; padding: 4px 7px; color: #8b9099; border: 1px solid #dfe2e8; border-radius: 6px; background: #f2f3f6; font-size: .68rem; font-weight: 850; cursor: pointer; transition: transform var(--transition), color var(--transition), background var(--transition); }

@@ -164,6 +164,33 @@ final class UserController
         Response::json(['ok' => true, 'message' => $status === User::STATUS_BLOCKED ? 'Доступ пользователя заблокирован.' : 'Доступ пользователя восстановлен.']);
     }
 
+    public function grantStudentAccess(string $id): void
+    {
+        $admin = Auth::requireUserManager();
+        Csrf::enforce(true);
+        $target = User::find((int) $id);
+        if (!$target || !$target->isStudent()) {
+            Response::json(['ok' => false, 'message' => 'Курсант не найден.'], 404);
+        }
+        $this->authorizeTarget($admin, $target);
+        $renew = ($_POST['renew'] ?? '') === '1';
+        $months = (string) ($_POST['access_months'] ?? '');
+        if ($renew && $months !== '' && (!ctype_digit($months) || (int) $months < 1 || (int) $months > 120)) {
+            Response::json(['ok' => false, 'message' => 'Укажите срок от 1 до 120 месяцев или оставьте поле пустым.'], 422);
+        }
+        if (!User::grantStudentAccess($target->id, $months === '' ? null : (int) $months, $renew, $admin->id)) {
+            Response::json(['ok' => false, 'message' => 'Не удалось открыть доступ. Обновите страницу и повторите попытку.'], 422);
+        }
+        $updated = User::find($target->id);
+        $changes = ActivityLog::changes($this->userAuditState($target), $this->userAuditState($updated), $this->userAuditFields());
+        if ($changes) {
+            ActivityLog::record('user.unblocked', 'Открыт доступ курсанту', $admin, [$updated], 'user', $updated->id, [
+                'name' => $updated->fullName(), 'role_key' => $updated->role, 'changes' => $changes,
+            ]);
+        }
+        Response::json(['ok' => true, 'message' => 'Доступ курсанта открыт.']);
+    }
+
     public function resetPassword(string $id): void
     {
         $admin = Auth::requireUserManager();

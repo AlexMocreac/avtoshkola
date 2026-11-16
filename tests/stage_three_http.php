@@ -186,6 +186,26 @@ try {
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/contracts/' . $ids['contract'] . '/balances/' . $balanceTypeId . '/progress', $studentCookies, ['_token' => $studentToken, 'amount' => '3']), 403, 'student-progress-write-denied');
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/lessons/' . $pastLesson . '/attendance', $studentCookies, ['_token' => $studentToken, 'attendance' => [$ids['student'] => $ids['contract']]]), 403, 'student-attendance-write-denied');
 
+    $roster = stageThreeHttpCall('GET', $baseUrl . '/education/classes?class_id=' . $ids['class'], $managerCookies);
+    stageThreeExpect($roster, 200, 'access-roster');
+    foreach (['<th>Доступ</th>', 'data-student-id="' . $ids['student'] . '"', 'data-access-active="1"', 'id="studentAccessModal"'] as $needle) {
+        if (!str_contains($roster['body'], $needle)) throw new RuntimeException('Access roster missing: ' . $needle);
+    }
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/grant-access', $teacherCookies, ['_token' => $teacherToken, 'renew' => '1', 'access_months' => '6']), 403, 'teacher-access-write-denied');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['teacher'] . '/grant-access', $managerCookies, ['_token' => $token, 'renew' => '1', 'access_months' => '6']), 404, 'staff-access-write-denied');
+    $pdo->prepare('UPDATE users SET status = "blocked", access_months = 6, access_expires_at = DATE_SUB(NOW(), INTERVAL 1 DAY) WHERE id = ?')->execute([$ids['student']]);
+    $roster = stageThreeHttpCall('GET', $baseUrl . '/education/classes?class_id=' . $ids['class'], $managerCookies);
+    if (!str_contains($roster['body'], 'data-access-active="0"') || !str_contains($roster['body'], 'data-access-expired="1"')) throw new RuntimeException('Expired access is not shown as inactive.');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/grant-access', $managerCookies, ['_token' => $token, 'renew' => '0']), 422, 'expired-access-requires-renewal');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/grant-access', $managerCookies, ['_token' => $token, 'renew' => '1', 'access_months' => '121']), 422, 'invalid-access-term');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/grant-access', $managerCookies, ['_token' => $token, 'renew' => '1', 'access_months' => '3']), 200, 'renew-access');
+    $renewed = $pdo->query('SELECT status, access_months, access_expires_at > NOW() AS valid FROM users WHERE id = ' . $ids['student'])->fetch();
+    if ($renewed['status'] !== 'active' || (int) $renewed['access_months'] !== 3 || !(bool) $renewed['valid']) throw new RuntimeException('Access renewal was not saved.');
+    $expiry = $pdo->query('SELECT access_expires_at FROM users WHERE id = ' . $ids['student'])->fetchColumn();
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/status', $managerCookies, ['_token' => $token, 'status' => 'blocked']), 200, 'block-access');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/grant-access', $managerCookies, ['_token' => $token, 'renew' => '0']), 200, 'restore-access');
+    if ($pdo->query('SELECT access_expires_at FROM users WHERE id = ' . $ids['student'])->fetchColumn() !== $expiry) throw new RuntimeException('Restoring access changed the existing term.');
+
 
 
     $classPage = stageThreeHttpCall('GET', $baseUrl . '/education/classes/' . $ids['class'], $managerCookies);

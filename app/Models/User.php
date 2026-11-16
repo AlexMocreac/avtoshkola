@@ -183,6 +183,22 @@ final class User
         return $stmt->execute(['status' => $status, 'updated_by' => $updatedBy, 'id' => $id, 'deleted' => self::STATUS_DELETED]);
     }
 
+    public static function grantStudentAccess(int $id, ?int $months, bool $renew, int $updatedBy): bool
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE users SET status = "active", access_months = IF(:renew_months = 1, :months, access_months),
+             access_expires_at = CASE WHEN :renew_expiry = 1 THEN
+                 IF(:expiry_months IS NULL, NULL, DATE_ADD(NOW(), INTERVAL :expiry_interval MONTH))
+                 ELSE access_expires_at END, updated_by = :updated_by
+             WHERE id = :id AND role = "student" AND status <> "deleted"
+               AND (:renew_check = 1 OR access_expires_at IS NULL OR access_expires_at > NOW())'
+        );
+        $stmt->execute(['renew_months' => (int) $renew, 'months' => $months, 'renew_expiry' => (int) $renew,
+            'expiry_months' => $months, 'expiry_interval' => $months, 'updated_by' => $updatedBy,
+            'id' => $id, 'renew_check' => (int) $renew]);
+        return $stmt->rowCount() > 0;
+    }
+
     public static function blockExpiredStudents(): void
     {
         $pdo = Database::connection();
