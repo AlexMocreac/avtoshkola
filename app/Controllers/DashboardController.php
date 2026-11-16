@@ -9,6 +9,7 @@ use App\Core\View;
 use App\Models\Conversation;
 use App\Models\ActivityLog;
 use App\Models\Contract;
+use App\Models\EducationFinance;
 use App\Models\Lead;
 use App\Models\Task;
 use App\Models\User;
@@ -40,6 +41,7 @@ final class DashboardController
             'recentEvents' => $recentEvents,
             'openTasks' => $user->canUseTasks() ? Task::openCountFor($user) : null,
             'unreadMessages' => Conversation::totalUnread($user->id),
+            'contractProgress' => $user->isStudent() ? EducationFinance::contractBalanceProgress($user->id) : [],
         ]);
     }
 }

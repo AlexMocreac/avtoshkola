@@ -84,12 +84,14 @@ final class EducationController
             'selectedClass' => $selectedClass,
             'saleServices' => $selectedClass && $user->canManageEducation() ? EducationFinance::services(true) : [],
             'studentSales' => $selectedClass && $user->canManageEducation() ? array_combine($studentIds, array_map([EducationFinance::class, 'sales'], $studentIds)) : [],
+            'studentContracts' => $selectedClass && $user->canManageEducation() ? array_combine($studentIds, array_map([StudentProfile::class, 'contracts'], $studentIds)) : [],
             'availableStudents' => $selectedClass && $user->canManageEducation() ? StudyClass::availableStudents() : [],
             'programs' => EducationCatalog::activePrograms(),
             'checkpoints' => EducationCatalog::checkpoints(true),
             'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
             'balanceTypes' => EducationCatalog::balanceTypes(true),
             'balanceValues' => EducationCatalog::balanceValueMap($studentIds),
+            'contractProgressByStudent' => EducationFinance::contractBalanceProgressMany($studentIds),
             'teachers' => User::teachers(),
             'weekdays' => StudyClass::WEEKDAYS,
             'statuses' => StudyClass::STATUSES,
@@ -216,6 +218,14 @@ final class EducationController
         $class = $this->classOrFail((int) $id, $user);
         $students = StudyClass::students((int) $id);
         $studentIds = array_map(static fn (array $student): int => (int) $student['id'], $students);
+        $attendanceRoster = StudyClass::attendanceRoster((int) $id);
+        $attendanceByLesson = StudyClass::attendanceForClass((int) $id);
+        if ($user->role === User::ROLE_TEACHER) {
+            $attendanceRoster = array_values(array_filter($attendanceRoster, static fn (array $entry): bool => in_array((int) $entry['student_id'], $studentIds, true)));
+            foreach ($attendanceByLesson as &$entries) $entries = array_intersect_key($entries, array_fill_keys($studentIds, true));
+            unset($entries);
+        }
+        $attendanceStudentIds = array_values(array_unique(array_map(static fn (array $student): int => (int) $student['student_id'], $attendanceRoster)));
         View::render('education/classes/show', [
             'pageTitle' => 'Класс ' . $class['group_number'],
             'pageEyebrow' => 'Учебный класс',
@@ -223,6 +233,9 @@ final class EducationController
             'class' => $class,
             'patterns' => StudyClass::patterns((int) $id),
             'lessons' => StudyClass::lessons((int) $id),
+            'attendanceRoster' => $attendanceRoster,
+            'attendanceByLesson' => $attendanceByLesson,
+            'attendanceProgressByStudent' => EducationFinance::contractBalanceProgressMany($attendanceStudentIds),
             'students' => $students,
             'availableStudents' => StudyClass::availableStudents(),
             'teachers' => User::teachers(),
@@ -234,6 +247,7 @@ final class EducationController
             'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
             'balanceTypes' => EducationCatalog::balanceTypes(true),
             'balanceValues' => EducationCatalog::balanceValueMap($studentIds),
+            'contractProgressByStudent' => EducationFinance::contractBalanceProgressMany($studentIds),
         ]);
     }
 
@@ -256,6 +270,40 @@ final class EducationController
             Flash::set('success', 'Класс перемещён в папку «' . $folder['name'] . '».');
         }
         Response::redirect('/education/classes?folder_id=' . $folderId . '&class_id=' . (int) $id);
+    }
+
+    public function updateClassBalanceType(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $this->classOrFail((int) $id, $user);
+        try {
+            $raw = (string) ($_POST['balance_type_id'] ?? '');
+            if ($raw !== '' && (!ctype_digit($raw) || (int) $raw < 1)) throw new RuntimeException('Выберите корректный тип баланса.');
+            StudyClass::setDefaultBalanceType((int) $id, $raw === '' ? null : (int) $raw, $user->id);
+            ActivityLog::record('class.balance_type_updated', 'Обновлён баланс занятий класса', $user, [], 'class', (int) $id, ['balance_type_id' => $raw]);
+            Flash::set('success', 'Баланс занятий класса сохранён.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/classes/' . (int) $id . '#schedule');
+    }
+
+    public function saveLessonAttendance(string $id, string $lessonId): void
+    {
+        $user = Auth::requireEducationAccess();
+        Csrf::enforce();
+        $this->classOrFail((int) $id, $user);
+        try {
+            $selections = (array) ($_POST['attendance'] ?? []);
+            if ($user->role === User::ROLE_TEACHER) foreach (array_keys($selections) as $studentId) $this->studentOrFail((int) $studentId, $user);
+            StudyClass::saveAttendance((int) $id, (int) $lessonId, $selections, $user->id);
+            ActivityLog::record('lesson.attendance_updated', 'Обновлена посещаемость занятия', $user, [], 'class', (int) $id, ['lesson_id' => (int) $lessonId]);
+            Flash::set('success', 'Посещаемость сохранена.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/classes/' . (int) $id . '#schedule');
     }
 
     public function updateClass(string $id): void
@@ -377,7 +425,23 @@ final class EducationController
             'checkpointStates' => EducationCatalog::checkpointStateMap([(int) $id])[(int) $id] ?? [],
             'balanceTypes' => EducationCatalog::balanceTypes(true),
             'balanceValues' => EducationCatalog::balanceValueMap([(int) $id])[(int) $id] ?? [],
+            'contractProgress' => EducationFinance::contractBalanceProgress((int) $id),
         ]);
+    }
+
+    public function updateContractProgress(string $id, string $contractId, string $typeId): void
+    {
+        $user = Auth::requireEducationAccess();
+        Csrf::enforce();
+        $this->studentOrFail((int) $id, $user);
+        try {
+            EducationFinance::setContractManualUsage((int) $id, (int) $contractId, (int) $typeId, $_POST['amount'] ?? '', $user->id);
+            ActivityLog::record('contract.progress_updated', 'Обновлён прогресс по договору', $user, [User::find((int) $id)], 'contract', (int) $contractId, ['balance_type_id' => (int) $typeId, 'amount' => (string) ($_POST['amount'] ?? '')]);
+            Flash::set('success', 'Прогресс сохранён.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/students/' . (int) $id . '#learning');
     }
 
     public function setCheckpoint(string $id, string $checkpointId): void
@@ -578,6 +642,21 @@ final class EducationController
             Flash::set('error', $exception->getMessage());
         }
         Response::redirect('/education/students/' . $id . '#payments');
+    }
+
+    public function linkSaleToContract(string $id, string $saleId): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $this->studentOrFail((int) $id, $user);
+        try {
+            EducationFinance::linkLegacySaleToContract((int) $id, (int) $saleId, (int) ($_POST['contract_id'] ?? 0));
+            ActivityLog::record('student.sale_linked', 'Продажа привязана к договору', $user, [User::find((int) $id)], 'contract', (int) $_POST['contract_id'], ['sale_id' => (int) $saleId]);
+            Flash::set('success', 'Продажа привязана к договору.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/students/' . (int) $id . '#payments');
     }
 
     public function updateSale(string $id, string $saleId): void

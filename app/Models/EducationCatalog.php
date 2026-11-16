@@ -329,6 +329,73 @@ final class EducationCatalog
         ]);
     }
 
+    public static function balanceFolders(): array
+    {
+        $rows = Database::connection()->query('SELECT f.*, (SELECT COUNT(*) FROM student_balance_types t WHERE t.folder_id = f.id) AS item_count FROM student_balance_type_folders f ORDER BY f.name, f.id')->fetchAll();
+        $children = [];
+        foreach ($rows as $row) $children[(int) ($row['parent_id'] ?? 0)][] = $row;
+        $ordered = [];
+        $append = static function (int $parent, int $depth) use (&$append, &$ordered, $children): void {
+            foreach ($children[$parent] ?? [] as $row) {
+                $row['depth'] = $depth;
+                $ordered[] = $row;
+                $append((int) $row['id'], $depth + 1);
+            }
+        };
+        $append(0, 0);
+        return $ordered;
+    }
+
+    public static function saveBalanceFolder(string $name, ?int $parentId, int $userId): int
+    {
+        $name = trim($name);
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 120) throw new RuntimeException('Название папки должно содержать от 2 до 120 символов.');
+        if ($parentId && !self::findBalanceFolder($parentId)) throw new RuntimeException('Выберите доступную родительскую папку.');
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('INSERT INTO student_balance_type_folders (name, parent_id, created_by, updated_by) VALUES (:name, :parent_id, :created_by, :updated_by)');
+        $stmt->execute(['name' => $name, 'parent_id' => $parentId, 'created_by' => $userId, 'updated_by' => $userId]);
+        return (int) $pdo->lastInsertId();
+    }
+
+    public static function findBalanceFolder(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare('SELECT * FROM student_balance_type_folders WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public static function moveBalanceFolder(int $id, ?int $parentId, int $userId): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $rows = $pdo->query('SELECT id, parent_id FROM student_balance_type_folders FOR UPDATE')->fetchAll();
+            $folders = [];
+            foreach ($rows as $row) $folders[(int) $row['id']] = $row;
+            if (!isset($folders[$id])) throw new RuntimeException('Папка не найдена.');
+            if ($parentId !== null && !isset($folders[$parentId])) throw new RuntimeException('Выберите доступную папку.');
+            $seen = [];
+            for ($cursor = $parentId; $cursor !== null; $cursor = isset($folders[$cursor]['parent_id']) ? (int) $folders[$cursor]['parent_id'] : null) {
+                if ($cursor === $id || isset($seen[$cursor])) throw new RuntimeException('Нельзя переместить папку в неё саму или её вложенную папку.');
+                $seen[$cursor] = true;
+            }
+            $stmt = $pdo->prepare('UPDATE student_balance_type_folders SET parent_id = :parent_id, updated_by = :updated_by WHERE id = :id');
+            $stmt->execute(['parent_id' => $parentId, 'updated_by' => $userId, 'id' => $id]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    public static function moveBalanceType(int $id, int $folderId, int $userId): void
+    {
+        if (!self::findBalanceType($id)) throw new RuntimeException('Тип баланса не найден.');
+        if (!self::findBalanceFolder($folderId)) throw new RuntimeException('Выберите доступную папку.');
+        $stmt = Database::connection()->prepare('UPDATE student_balance_types SET folder_id = :folder_id, updated_by = :updated_by WHERE id = :id');
+        $stmt->execute(['folder_id' => $folderId, 'updated_by' => $userId, 'id' => $id]);
+    }
+
     public static function balanceTypes(bool $activeOnly = false): array
     {
         return Database::connection()->query(
@@ -358,7 +425,13 @@ final class EducationCatalog
         if (!preg_match('/^#[0-9a-f]{6}$/', $color)) {
             throw new RuntimeException('Цвет должен быть указан в формате #4768db.');
         }
+        $folderId = (int) ($data['folder_id'] ?? 0);
+        if (!$folderId && $id) $folderId = (int) (self::findBalanceType($id)['folder_id'] ?? 0);
+        if (!$folderId) $folderId = (int) Database::connection()->query('SELECT id FROM student_balance_type_folders ORDER BY id LIMIT 1')->fetchColumn();
+        if (!$folderId) $folderId = self::saveBalanceFolder('Общие балансы', null, $userId);
+        if (!self::findBalanceFolder($folderId)) throw new RuntimeException('Выберите доступную папку.');
         $payload = [
+            'folder_id' => $folderId,
             'name' => $name,
             'code' => $code,
             'unit' => $unit,
@@ -369,15 +442,15 @@ final class EducationCatalog
         ];
         if ($id) {
             $stmt = Database::connection()->prepare(
-                'UPDATE student_balance_types SET name = :name, code = :code, unit = :unit, color = :color,
+                'UPDATE student_balance_types SET folder_id = :folder_id, name = :name, code = :code, unit = :unit, color = :color,
                  sort_order = :sort_order, status = :status, updated_by = :updated_by WHERE id = :id'
             );
             $stmt->execute($payload + ['id' => $id]);
             return $id;
         }
         $stmt = Database::connection()->prepare(
-            'INSERT INTO student_balance_types (code, name, unit, color, sort_order, status, created_by, updated_by)
-             VALUES (:code, :name, :unit, :color, :sort_order, :status, :created_by, :updated_by)'
+            'INSERT INTO student_balance_types (folder_id, code, name, unit, color, sort_order, status, created_by, updated_by)
+             VALUES (:folder_id, :code, :name, :unit, :color, :sort_order, :status, :created_by, :updated_by)'
         );
         $stmt->execute($payload + ['created_by' => $userId]);
         return (int) Database::connection()->lastInsertId();

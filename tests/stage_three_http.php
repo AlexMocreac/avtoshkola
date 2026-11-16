@@ -10,6 +10,7 @@ use App\Models\User;
 $baseUrl = rtrim((string) (getenv('TEST_BASE_URL') ?: 'http://127.0.0.1:8094'), '/');
 $managerCookies = tempnam(sys_get_temp_dir(), 'avto-stage-three-manager-');
 $teacherCookies = tempnam(sys_get_temp_dir(), 'avto-stage-three-teacher-');
+$studentCookies = tempnam(sys_get_temp_dir(), 'avto-stage-three-student-');
 $pdo = Database::connection();
 $suffix = bin2hex(random_bytes(5));
 $password = 'StageThreeHttp123!';
@@ -115,8 +116,9 @@ try {
     $lookup->execute(['name' => 'HTTP касса ' . $suffix]);
     $ids['kassa'] = (int) $lookup->fetchColumn();
 
+    $balanceTypeId = (int) $pdo->query('SELECT id FROM student_balance_types ORDER BY id LIMIT 1')->fetchColumn();
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/services', $managerCookies, [
-        '_token' => $token, 'name' => 'HTTP курс B ' . $suffix, 'price' => '48 000,00', 'status' => 'active',
+        '_token' => $token, 'name' => 'HTTP курс B ' . $suffix, 'price' => '48 000,00', 'status' => 'active', 'allocations' => [['amount' => '18000', 'balances' => [$balanceTypeId => '6']]],
     ]), 302, 'service-create');
     $lookup = $pdo->prepare('SELECT id FROM education_services WHERE name = :name');
     $lookup->execute(['name' => 'HTTP курс B ' . $suffix]);
@@ -151,23 +153,44 @@ try {
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/students', $managerCookies, [
         '_token' => $token, 'student_id' => $ids['student'], 'joined_on' => date('Y-m-d'),
     ]), 302, 'student-enroll');
-    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/sales', $managerCookies, [
-        '_token' => $token, 'service_id' => $ids['service'], 'amount' => '48000', 'sold_on' => date('Y-m-d'),
-    ]), 302, 'sale-create');
-    $ids['sale'] = (int) $pdo->query('SELECT id FROM student_sales WHERE student_id = ' . $ids['student'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
-    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/payments', $managerCookies, [
-        '_token' => $token, 'sale_id' => $ids['sale'], 'kassa_id' => $ids['kassa'], 'amount' => '18000', 'paid_on' => date('Y-m-d\TH:i'),
-    ]), 302, 'payment-create');
-    $ids['payment'] = (int) $pdo->query('SELECT id FROM student_payments WHERE student_id = ' . $ids['student'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/contracts', $managerCookies, [
         '_token' => $token, 'contract_number' => '', 'registration_number' => 'HTTP-REG-' . $suffix,
         'signed_on' => date('Y-m-d'), 'starts_on' => date('Y-m-d'), 'ends_on' => date('Y-m-d', strtotime('+6 months')),
         'amount' => '48000', 'subject' => 'Обучение в автошколе', 'counterparty' => 'HTTP Курсант', 'direction' => 'driving_school', 'status' => 'active',
     ]), 302, 'contract-create');
     $ids['contract'] = (int) $pdo->query('SELECT id FROM crm_contracts WHERE student_id = ' . $ids['student'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/sales', $managerCookies, [
+        '_token' => $token, 'contract_id' => $ids['contract'], 'service_id' => $ids['service'], 'amount' => '48000', 'sold_on' => date('Y-m-d'),
+    ]), 302, 'sale-create');
+    $ids['sale'] = (int) $pdo->query('SELECT id FROM student_sales WHERE student_id = ' . $ids['student'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/payments', $managerCookies, [
+        '_token' => $token, 'sale_id' => $ids['sale'], 'kassa_id' => $ids['kassa'], 'amount' => '18000', 'paid_on' => date('Y-m-d\TH:i'),
+    ]), 302, 'payment-create');
+    $ids['payment'] = (int) $pdo->query('SELECT id FROM student_payments WHERE student_id = ' . $ids['student'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/contracts/' . $ids['contract'] . '/balances/' . $balanceTypeId . '/progress', $managerCookies, ['_token' => $token, 'amount' => '2.5']), 302, 'contract-progress-update');
+    $progress = \App\Models\EducationFinance::contractBalanceProgress($ids['student']);
+    $balance = $progress[0]['balances'][$balanceTypeId] ?? null;
+    if (!$balance || $balance['assigned'] !== 6.0 || $balance['paid'] !== 6.0 || $balance['manual'] !== 2.5) throw new RuntimeException('Contract progress did not reflect sale, payment and manual usage.');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/balance-type', $managerCookies, ['_token' => $token, 'balance_type_id' => $balanceTypeId]), 302, 'class-balance-type');
+    $pdo->prepare('UPDATE class_enrollments SET joined_on = ? WHERE class_id = ? AND student_id = ?')->execute([date('Y-m-d', strtotime('-1 day')), $ids['class'], $ids['student']]);
+    $pdo->prepare('INSERT INTO class_lessons (class_id, teacher_id, title, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')->execute([$ids['class'], $ids['teacher'], 'Проведённое занятие', date('Y-m-d H:i:s', time() - 7200), date('Y-m-d H:i:s', time() - 1800)]);
+    $pastLesson = (int) $pdo->lastInsertId();
+    $teacherToken = stageThreeLogin($baseUrl, $teacherCookies, 'stage3.teacher.' . $suffix, $password);
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/lessons/' . $pastLesson . '/attendance', $teacherCookies, ['_token' => $teacherToken, 'attendance' => [$ids['student'] => $ids['contract']]]), 302, 'lesson-attendance');
+    $progress = \App\Models\EducationFinance::contractBalanceProgress($ids['student']);
+    if (($progress[0]['balances'][$balanceTypeId]['automatic'] ?? null) !== 1.5) throw new RuntimeException('Lesson attendance did not update contract progress.');
+    $studentToken = stageThreeLogin($baseUrl, $studentCookies, 'stage3.student.' . $suffix, $password);
+    $studentHome = stageThreeHttpCall('GET', $baseUrl . '/dashboard', $studentCookies);
+    stageThreeExpect($studentHome, 200, 'student-home');
+    if (!str_contains($studentHome['body'], 'Занятия по договорам') || !str_contains($studentHome['body'], '>4 ч</td>')) throw new RuntimeException('Student progress is missing from the home page.');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/students/' . $ids['student'] . '/contracts/' . $ids['contract'] . '/balances/' . $balanceTypeId . '/progress', $studentCookies, ['_token' => $studentToken, 'amount' => '3']), 403, 'student-progress-write-denied');
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/lessons/' . $pastLesson . '/attendance', $studentCookies, ['_token' => $studentToken, 'attendance' => [$ids['student'] => $ids['contract']]]), 403, 'student-attendance-write-denied');
+
+
 
     $classPage = stageThreeHttpCall('GET', $baseUrl . '/education/classes/' . $ids['class'], $managerCookies);
     stageThreeExpect($classPage, 200, 'class-page');
+    if (!str_contains($classPage['body'], 'data-attendance-lesson="' . $pastLesson . '"') || !str_contains($classPage['body'], 'id="classAttendanceDialog"')) throw new RuntimeException('Attendance controls missing from completed lesson.');
     if (!str_contains($classPage['body'], 'class="panel reveal class-schedule-panel" id="schedule"')) {
         throw new RuntimeException('Class page is missing the spaced schedule panel.');
     }
@@ -195,8 +218,6 @@ try {
         throw new RuntimeException('Generated class is missing from the shared calendar.');
     }
 
-    $teacherLogin = 'stage3.teacher.' . $suffix;
-    stageThreeLogin($baseUrl, $teacherCookies, $teacherLogin, $password);
     stageThreeExpect(stageThreeHttpCall('GET', $baseUrl . '/education/classes/' . $ids['class'], $teacherCookies), 200, 'teacher-own-class');
     stageThreeExpect(stageThreeHttpCall('GET', $baseUrl . '/education/kassas', $teacherCookies), 403, 'teacher-kassas-denied');
 
@@ -208,9 +229,11 @@ try {
         $stmt = $pdo->prepare("DELETE FROM activity_logs WHERE actor_user_id IN ({$placeholders}) OR id IN (SELECT activity_log_id FROM activity_log_targets WHERE impacted_user_id IN ({$placeholders}))");
         $stmt->execute(array_merge($userIds, $userIds));
     }
-    if ($ids['contract']) $pdo->prepare('DELETE FROM crm_contracts WHERE id = :id')->execute(['id' => $ids['contract']]);
+    if ($ids['class']) $pdo->prepare('DELETE a FROM class_lesson_attendance a JOIN class_lessons l ON l.id = a.lesson_id WHERE l.class_id = :id')->execute(['id' => $ids['class']]);
     if ($ids['payment']) $pdo->prepare('DELETE FROM student_payments WHERE id = :id')->execute(['id' => $ids['payment']]);
     if ($ids['sale']) $pdo->prepare('DELETE FROM student_sales WHERE id = :id')->execute(['id' => $ids['sale']]);
+    if ($ids['contract']) $pdo->prepare('DELETE FROM contract_balance_manual_usage WHERE contract_id = :id')->execute(['id' => $ids['contract']]);
+    if ($ids['contract']) $pdo->prepare('DELETE FROM crm_contracts WHERE id = :id')->execute(['id' => $ids['contract']]);
     if ($ids['class']) {
         $pdo->prepare('DELETE FROM class_enrollments WHERE class_id = :id')->execute(['id' => $ids['class']]);
         $pdo->prepare('DELETE FROM student_classes WHERE id = :id')->execute(['id' => $ids['class']]);
@@ -223,4 +246,5 @@ try {
     }
     @unlink($managerCookies);
     @unlink($teacherCookies);
+    @unlink($studentCookies);
 }
