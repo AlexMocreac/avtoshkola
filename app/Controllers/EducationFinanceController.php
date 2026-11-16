@@ -61,12 +61,17 @@ final class EducationFinanceController
     public function services(): void
     {
         $user = Auth::requireEducationManager();
+        $folders = EducationFinance::serviceFolders();
+        $folderIds = array_map(static fn (array $folder): int => (int) $folder['id'], $folders);
+        $selectedFolderId = (int) ($_GET['folder_id'] ?? 0);
+        if ($selectedFolderId && !in_array($selectedFolderId, $folderIds, true)) $selectedFolderId = 0;
         View::render('education/finance/services', [
             'pageTitle' => 'Услуги',
             'pageEyebrow' => 'Продажи курсантам',
             'currentUser' => $user,
             'services' => EducationFinance::services(),
-            'folders' => EducationFinance::serviceFolders(),
+            'folders' => $folders,
+            'selectedFolderId' => $selectedFolderId,
             'balanceTypes' => EducationCatalog::balanceTypes(),
         ]);
     }
@@ -76,12 +81,41 @@ final class EducationFinanceController
         Auth::requireEducationManager();
         Csrf::enforce();
         try {
-            EducationFinance::createServiceFolder($_POST);
+            $id = EducationFinance::createServiceFolder($_POST);
             Flash::set('success', 'Папка добавлена.');
+            Response::redirect('/education/services?folder_id=' . $id);
         } catch (RuntimeException|PDOException $exception) {
             Flash::set('error', $exception instanceof RuntimeException ? $exception->getMessage() : 'Не удалось создать папку.');
         }
         Response::redirect('/education/services');
+    }
+
+    public function moveServiceFolder(string $id): void
+    {
+        Auth::requireEducationManager();
+        Csrf::enforce();
+        try {
+            $parentId = (int) ($_POST['parent_id'] ?? 0);
+            EducationFinance::moveServiceFolder((int) $id, $parentId ?: null);
+            Flash::set('success', 'Папка перемещена.');
+        } catch (RuntimeException|PDOException $exception) {
+            Flash::set('error', $exception instanceof RuntimeException ? $exception->getMessage() : 'Не удалось переместить папку.');
+        }
+        Response::redirect('/education/services?folder_id=' . (int) $id);
+    }
+
+    public function moveService(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $folderId = (int) ($_POST['folder_id'] ?? 0);
+        try {
+            EducationFinance::moveService((int) $id, $folderId ?: null, $user->id);
+            Flash::set('success', 'Услуга перемещена.');
+        } catch (RuntimeException|PDOException $exception) {
+            Flash::set('error', $exception instanceof RuntimeException ? $exception->getMessage() : 'Не удалось переместить услугу.');
+        }
+        Response::redirect('/education/services?folder_id=' . $folderId);
     }
 
     public function createService(): void
@@ -95,7 +129,7 @@ final class EducationFinanceController
         } catch (RuntimeException $exception) {
             Flash::set('error', $exception->getMessage());
         }
-        Response::redirect('/education/services');
+        Response::redirect('/education/services?folder_id=' . (int) ($_POST['folder_id'] ?? 0));
     }
 
     public function updateService(string $id): void
@@ -109,6 +143,6 @@ final class EducationFinanceController
         } catch (RuntimeException $exception) {
             Flash::set('error', $exception->getMessage());
         }
-        Response::redirect('/education/services');
+        Response::redirect('/education/services?folder_id=' . (int) ($_POST['folder_id'] ?? 0));
     }
 }

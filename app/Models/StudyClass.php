@@ -146,6 +146,95 @@ final class StudyClass
         }
     }
 
+    public static function setDefaultBalanceType(int $classId, ?int $typeId, int $userId): void
+    {
+        if (!self::find($classId)) throw new RuntimeException('Класс не найден.');
+        if ($typeId !== null) {
+            $type = EducationCatalog::findBalanceType($typeId);
+            if (!$type || $type['status'] !== 'active' || !in_array($type['unit'], ['hours', 'count'], true)) throw new RuntimeException('Выберите действующий баланс часов или занятий.');
+        }
+        $stmt = Database::connection()->prepare('UPDATE student_classes SET default_balance_type_id = :type_id, updated_by = :updated_by WHERE id = :id');
+        $stmt->execute(['type_id' => $typeId, 'updated_by' => $userId, 'id' => $classId]);
+    }
+
+    public static function attendanceRoster(int $classId): array
+    {
+        $stmt = Database::connection()->prepare('SELECT ce.student_id, ce.joined_on, ce.left_on, u.first_name, u.last_name, u.middle_name FROM class_enrollments ce JOIN users u ON u.id = ce.student_id WHERE ce.class_id = ? ORDER BY u.last_name, u.first_name, ce.joined_on');
+        $stmt->execute([$classId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function attendanceForClass(int $classId): array
+    {
+        $stmt = Database::connection()->prepare('SELECT a.* FROM class_lesson_attendance a JOIN class_lessons l ON l.id = a.lesson_id WHERE l.class_id = ?');
+        $stmt->execute([$classId]);
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) $result[(int) $row['lesson_id']][(int) $row['student_id']] = $row;
+        return $result;
+    }
+
+    public static function saveAttendance(int $classId, int $lessonId, array $selections, int $userId): void
+    {
+        $pdo = Database::connection();
+        $owns = !$pdo->inTransaction();
+        if ($owns) $pdo->beginTransaction(); else $pdo->exec('SAVEPOINT lesson_attendance');
+        try {
+            $stmt = $pdo->prepare('SELECT l.*, c.default_balance_type_id FROM class_lessons l JOIN student_classes c ON c.id = l.class_id WHERE l.id = ? AND l.class_id = ? FOR UPDATE');
+            $stmt->execute([$lessonId, $classId]);
+            $lesson = $stmt->fetch();
+            if (!$lesson || $lesson['status'] === 'cancelled') throw new RuntimeException('Занятие не найдено или отменено.');
+            if (strtotime($lesson['ends_at']) > time()) throw new RuntimeException('Посещаемость можно отметить после окончания занятия.');
+            $typeId = (int) ($lesson['default_balance_type_id'] ?? 0);
+            $type = $typeId ? EducationCatalog::findBalanceType($typeId) : null;
+            if (!$type || $type['status'] !== 'active' || !in_array($type['unit'], ['hours', 'count'], true)) throw new RuntimeException('Сначала выберите для класса действующий баланс часов или занятий.');
+            $duration = (strtotime($lesson['ends_at']) - strtotime($lesson['starts_at'])) / 3600;
+            if ($duration <= 0) throw new RuntimeException('У занятия некорректная длительность.');
+            $amount = $type['unit'] === 'hours' ? round($duration, 2) : 1;
+            $parsed = [];
+            foreach ($selections as $studentId => $contractId) {
+                if (!is_scalar($studentId) || !is_scalar($contractId) || !ctype_digit((string) $studentId) || (int) $studentId < 1 || !ctype_digit((string) $contractId)) throw new RuntimeException('Проверьте данные посещаемости.');
+                $parsed[(int) $studentId] = (int) $contractId;
+            }
+            if ($parsed) {
+                $studentIds = array_keys($parsed);
+                $studentMarks = implode(',', array_fill(0, count($studentIds), '?'));
+                $enrolled = $pdo->prepare('SELECT DISTINCT student_id FROM class_enrollments WHERE class_id = ? AND joined_on <= DATE(?) AND (left_on IS NULL OR left_on >= DATE(?)) AND student_id IN (' . $studentMarks . ')');
+                $enrolled->execute(array_merge([$classId, $lesson['starts_at'], $lesson['starts_at']], $studentIds));
+                $eligible = array_fill_keys(array_map('intval', $enrolled->fetchAll(PDO::FETCH_COLUMN)), true);
+                foreach ($studentIds as $studentId) if (!isset($eligible[$studentId])) throw new RuntimeException('Курсант не был зачислен в класс на дату занятия.');
+                $existing = $pdo->prepare('SELECT student_id, contract_id, balance_type_id, amount FROM class_lesson_attendance WHERE lesson_id = ? FOR UPDATE');
+                $existing->execute([$lessonId]);
+                $previous = [];
+                foreach ($existing->fetchAll() as $row) $previous[(int) $row['student_id']] = $row;
+                $contractIds = array_values(array_unique(array_filter(array_values($parsed))));
+                if ($contractIds) {
+                    $contractMarks = implode(',', array_fill(0, count($contractIds), '?'));
+                    $lockSales = $pdo->prepare('SELECT id FROM student_sales WHERE contract_id IN (' . $contractMarks . ') AND student_id IN (' . $studentMarks . ') AND status = "active" ORDER BY id FOR UPDATE');
+                    $lockSales->execute(array_merge($contractIds, $studentIds));
+                    $lockSales->fetchAll();
+                }
+                $progress = EducationFinance::contractBalanceProgressMany($studentIds);
+                $delete = $pdo->prepare('DELETE FROM class_lesson_attendance WHERE lesson_id = ? AND student_id = ?');
+                $upsert = $pdo->prepare('INSERT INTO class_lesson_attendance (lesson_id, student_id, contract_id, balance_type_id, amount, updated_by) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE contract_id = VALUES(contract_id), balance_type_id = VALUES(balance_type_id), amount = VALUES(amount), updated_by = VALUES(updated_by)');
+                foreach ($parsed as $studentId => $contractId) {
+                    $prior = $previous[$studentId] ?? null;
+                    if (!$contractId) { if ($prior) $delete->execute([$lessonId, $studentId]); continue; }
+                    if ($prior && (int) $prior['contract_id'] === $contractId) continue;
+                    $valid = false;
+                    foreach ($progress[$studentId] ?? [] as $group) {
+                        if ((int) $group['contract']['id'] === $contractId && isset($group['balances'][$typeId])) { $valid = true; break; }
+                    }
+                    if (!$valid) throw new RuntimeException('У выбранного договора нет начислений на баланс этого класса.');
+                    $upsert->execute([$lessonId, $studentId, $contractId, $typeId, $amount, $userId]);
+                }
+            }
+            if ($owns) $pdo->commit(); else $pdo->exec('RELEASE SAVEPOINT lesson_attendance');
+        } catch (\Throwable $exception) {
+            if ($owns) $pdo->rollBack(); else $pdo->exec('ROLLBACK TO SAVEPOINT lesson_attendance');
+            throw $exception;
+        }
+    }
+
     public static function patterns(int $classId): array
     {
         $stmt = Database::connection()->prepare(
@@ -268,7 +357,7 @@ final class StudyClass
             $pdo->beginTransaction();
         }
         try {
-            $pdo->prepare('DELETE FROM class_lessons WHERE class_id = :class_id AND status = "scheduled"')
+            $pdo->prepare('DELETE FROM class_lessons WHERE class_id = :class_id AND status = "scheduled" AND NOT EXISTS (SELECT 1 FROM class_lesson_attendance a WHERE a.lesson_id = class_lessons.id)')
                 ->execute(['class_id' => $classId]);
             $preserved = $pdo->prepare('SELECT starts_at FROM class_lessons WHERE class_id = :class_id');
             $preserved->execute(['class_id' => $classId]);

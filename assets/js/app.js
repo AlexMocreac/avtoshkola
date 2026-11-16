@@ -1281,6 +1281,49 @@
         openDialog(document.getElementById(button.dataset.dialogOpen));
     }));
 
+    // Preserve each folder’s expanded state, including when an ancestor is collapsed.
+    qsa('[data-collapsible-tree]').forEach((tree) => {
+        const branches = qsa('[data-drop-folder]', tree);
+        const byId = new Map(branches.map((branch) => [branch.dataset.dropFolder, branch]));
+        const storageKey = `catalog-collapsed-folders-${tree.dataset.collapsibleTree}`;
+        let collapsed = new Set();
+        try {
+            const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            if (Array.isArray(saved)) collapsed = new Set(saved.filter((id) => typeof id === 'string'));
+        } catch (_) { /* Folder navigation also works when storage is unavailable. */ }
+        const render = () => {
+            branches.forEach((branch) => {
+                const id = branch.dataset.dropFolder;
+                const button = qs('[data-folder-toggle]', branch);
+                const content = qs(':scope > .class-tree__classes', branch);
+                const children = qs(':scope > .class-tree__children', branch);
+                const closed = collapsed.has(id);
+                const name = qs('.class-tree__folder strong', branch)?.textContent || '';
+                button.setAttribute('aria-expanded', String(!closed));
+                button.setAttribute('aria-label', `${closed ? 'Развернуть' : 'Свернуть'} папку ${name}`);
+                button.title = closed ? 'Развернуть папку' : 'Свернуть папку';
+                if (content) content.hidden = closed;
+                if (children) children.hidden = closed;
+                let parent = branch.dataset.parentFolder;
+                const visited = new Set();
+                let hidden = false;
+                while (parent && parent !== '0' && byId.has(parent) && !visited.has(parent)) {
+                    if (collapsed.has(parent)) { hidden = true; break; }
+                    visited.add(parent);
+                    parent = byId.get(parent).dataset.parentFolder;
+                }
+                branch.hidden = hidden;
+            });
+        };
+        branches.forEach((branch) => qs('[data-folder-toggle]', branch)?.addEventListener('click', () => {
+            const id = branch.dataset.dropFolder;
+            if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+            try { localStorage.setItem(storageKey, JSON.stringify([...collapsed])); } catch (_) { /* Keep the current view usable. */ }
+            render();
+        }));
+        render();
+    });
+
     // Drag classes and folders, with dialogs for keyboard and touch users.
     const classBrowser = qs('[data-class-browser]');
     const classMoveDialog = qs('#classMoveDialog');
@@ -1304,7 +1347,7 @@
         };
         const allowed = (destination) => drag && (drag.type === 'class'
             ? destination !== '' && destination !== drag.source
-            : destination !== (drag.source === '0' ? '' : drag.source) && (!destination || !isWithin(destination, drag.id)));
+            : (destination === '0' ? '' : destination) !== (drag.source === '0' ? '' : drag.source) && (!destination || destination === '0' || !isWithin(destination, drag.id)));
         const clearDrag = () => {
             classBrowser.classList.remove('is-dragging-class', 'is-dragging-folder');
             qsa('.is-drop-target, .is-drag-source, .is-current-folder, .is-drop-eligible', classBrowser).forEach((el) => el.classList.remove('is-drop-target', 'is-drag-source', 'is-current-folder', 'is-drop-eligible'));
@@ -1322,7 +1365,7 @@
         };
         qsa('[data-move-class]', classBrowser).forEach((button) => button.addEventListener('click', () => {
             prepareClassMove(button.dataset.moveClass, button.dataset.sourceFolder);
-            qs('[data-move-label]', classMoveDialog).textContent = `Группа ${button.dataset.className}`;
+            qs('[data-move-label]', classMoveDialog).textContent = `${classBrowser.dataset.moveLabelPrefix || 'Группа'} ${button.dataset.className}`;
             openDialog(classMoveDialog);
         }));
         qsa('[data-move-folder-id]', classBrowser).forEach((button) => button.addEventListener('click', () => {
@@ -1348,6 +1391,7 @@
         [...branches, qs('[data-drop-root]', classBrowser)].filter(Boolean).forEach((target) => {
             const destination = target.dataset.dropFolder || '';
             target.addEventListener('dragover', (event) => {
+                if (event.target.closest('[data-drop-folder], [data-drop-root]') !== target) return;
                 if (!allowed(destination)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
@@ -1358,6 +1402,7 @@
                 if (!target.contains(event.relatedTarget)) target.classList.remove('is-drop-target');
             });
             target.addEventListener('drop', (event) => {
+                if (event.target.closest('[data-drop-folder], [data-drop-root]') !== target) return;
                 if (!allowed(destination)) return;
                 event.preventDefault();
                 const form = drag.type === 'class' ? classMoveForm : folderMoveForm;
@@ -1366,12 +1411,55 @@
                     classDestination.value = destination;
                 } else {
                     prepareFolderMove(drag.id);
-                    folderDestination.value = destination;
+                    folderDestination.value = destination === '0' ? '' : destination;
                 }
                 clearDrag();
                 form.requestSubmit();
             });
         });
+    }
+
+    const directSaleService = qs('[data-direct-sale-service]');
+    if (directSaleService) directSaleService.addEventListener('change', () => {
+        const price = directSaleService.selectedOptions[0]?.dataset.price;
+        const amount = qs('[name="amount"]', directSaleService.form);
+        if (amount) amount.value = price || '';
+    });
+
+    const attendanceDialog = qs('#classAttendanceDialog');
+    const attendanceDataElement = qs('#classAttendanceData');
+    if (attendanceDialog && attendanceDataElement) {
+        const data = JSON.parse(attendanceDataElement.textContent || '{}');
+        const form = qs('[data-attendance-form]', attendanceDialog);
+        qsa('[data-attendance-lesson]').forEach((button) => button.addEventListener('click', () => {
+            const lessonId = button.dataset.attendanceLesson;
+            const date = button.dataset.lessonDate;
+            const attendance = data.attendance?.[lessonId] || {};
+            const rows = qs('[data-attendance-rows]', form);
+            rows.replaceChildren();
+            form.action = form.dataset.actionTemplate.replace('__ID__', lessonId);
+            qs('[data-attendance-label]', attendanceDialog).textContent = button.dataset.lessonLabel;
+            const students = new Map();
+            (data.roster || []).forEach(student => {
+                if (student.joined_on <= date && (!student.left_on || student.left_on >= date)) students.set(String(student.student_id), student);
+            });
+            students.forEach((student, studentId) => {
+                const prior = attendance[studentId];
+                const groups = data.progress?.[studentId] || [];
+                const choices = groups.filter(group => group.balances?.[data.balanceTypeId] || String(group.contract.id) === String(prior?.contract_id || ''));
+                const row = document.createElement('label'); row.className = 'attendance-row';
+                const name = document.createElement('strong'); name.textContent = [student.last_name, student.first_name, student.middle_name].filter(Boolean).join(' '); row.append(name);
+                const select = document.createElement('select'); select.name = `attendance[${studentId}]`; select.setAttribute('aria-label', `Посещаемость: ${name.textContent}`);
+                const absent = document.createElement('option'); absent.value = '0'; absent.textContent = 'Не отмечен'; select.append(absent);
+                choices.forEach(group => { const option = document.createElement('option'); option.value = group.contract.id; option.textContent = `Присутствовал · договор № ${group.contract.contract_number}`; if (prior && Number(prior.contract_id) === Number(group.contract.id)) option.selected = true; select.append(option); });
+                if (prior && !choices.some(group => Number(group.contract.id) === Number(prior.contract_id))) { const option = document.createElement('option'); option.value = prior.contract_id; option.textContent = `Присутствовал · договор № ${prior.contract_id}`; option.selected = true; select.append(option); }
+                if (select.options.length === 1) { select.disabled = true; const hint = document.createElement('small'); hint.textContent = data.balanceTypeId ? 'Нет договора с начислением на баланс класса' : 'Сначала настройте баланс занятий класса'; row.append(hint); }
+                else row.append(select);
+                rows.append(row);
+            });
+            if (!students.size) { const empty = document.createElement('p'); empty.className = 'empty-inline'; empty.textContent = 'На дату занятия в классе нет зачисленных курсантов.'; rows.append(empty); }
+            openDialog(attendanceDialog);
+        }));
     }
 
     const contractForm = qs('#contractForm');
@@ -2062,15 +2150,15 @@
             qsa('[data-sale-step]', form).forEach(el => { el.hidden = Number(el.dataset.saleStep) !== step; });
             qsa('.sale-progress span', wizard).forEach((el, i) => el.classList.toggle('is-active', i === step));
             qs('[data-sale-back]', form).hidden = step === 0; qs('[data-sale-next]', form).hidden = step === 4; qs('[data-sale-finish]', form).hidden = step !== 4; error();
-            if (step === 3) { const head = qs('[data-allocation-head]', form), rows = qs('[data-allocation-rows]', form); head.replaceChildren(); rows.replaceChildren(); const hr = document.createElement('tr'); const amountHeading = document.createElement('th'); amountHeading.textContent = 'Сумма оплаты'; hr.append(amountHeading); data.balances.forEach(b => { const th = document.createElement('th'), label = document.createElement('span'); th.title = b.name; label.className = 'balance-code'; label.style.setProperty('--chip-color', b.color); label.textContent = b.code; th.append(label); hr.append(th); }); head.append(hr); const allocations = details(selected).allocations || []; allocations.forEach(item => { const row = document.createElement('tr'); cell(row, money(item.amount)); data.balances.forEach(b => cell(row, item.balances?.[b.id] ?? '—')); rows.append(row); }); if (!allocations.length) { const row = document.createElement('tr'), td = document.createElement('td'); td.colSpan = data.balances.length + 1; td.textContent = 'Для этой услуги схема начислений не настроена.'; row.append(td); rows.append(row); } }
+            if (step === 3) { const head = qs('[data-allocation-head]', form), rows = qs('[data-allocation-rows]', form); head.replaceChildren(); rows.replaceChildren(); const allocations = details(selected).allocations || []; const balances = data.balances.filter(b => allocations.some(item => Number(item.balances?.[b.id] || 0) > 0)); const hr = document.createElement('tr'); const amountHeading = document.createElement('th'); amountHeading.textContent = 'Сумма оплаты'; hr.append(amountHeading); balances.forEach(b => { const th = document.createElement('th'), label = document.createElement('span'); th.title = b.name; label.className = 'balance-code'; label.style.setProperty('--chip-color', b.color); label.textContent = b.code; th.append(label); hr.append(th); }); head.append(hr); allocations.forEach(item => { const row = document.createElement('tr'); cell(row, money(item.amount)); balances.forEach(b => cell(row, item.balances?.[b.id] ?? '—')); rows.append(row); }); if (!allocations.length) { const row = document.createElement('tr'), td = document.createElement('td'); td.colSpan = balances.length + 1; td.textContent = 'Для этой услуги схема начислений не настроена.'; row.append(td); rows.append(row); } }
             if (step === 4) { const review = qs('[data-sale-review]', form); review.replaceChildren(); [`Услуга: ${selected.name}`, `Дата продажи: ${form.elements.sold_on.value}`, `Стоимость: ${money(qs('[data-sale-amount]', form).value)}`, 'После завершения продажи можно принять оплату в карточке курсанта.'].forEach(t => { const p = document.createElement('div'); p.textContent = t; review.append(p); }); }
         }
-        qs('[data-sale-start]').addEventListener('click', () => { form.reset(); selected = null; installments = []; step = 0; renderServices(); renderInstallments(); renderStep(); openDialog(wizard); });
+        qs('[data-sale-start]').addEventListener('click', () => { form.reset(); selected = null; installments = []; step = 0; const contractSelect = qs('[data-sale-contract]', form); contractSelect.replaceChildren(); const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Выберите договор'; contractSelect.append(placeholder); (data.contracts[studentId] || []).filter(contract => contract.status === 'active').forEach(contract => { const option = document.createElement('option'); option.value = contract.id; option.textContent = `№ ${contract.contract_number}`; contractSelect.append(option); }); if (contractSelect.options.length === 2) contractSelect.selectedIndex = 1; renderServices(); renderInstallments(); renderStep(); openDialog(wizard); });
         qs('.sale-search', form).addEventListener('input', renderServices);
         qs('[data-sale-back]', form).addEventListener('click', () => { if (step > 0) { step--; renderStep(); } });
         qs('[data-sale-next]', form).addEventListener('click', () => {
             if (step === 0 && !selected) return error('Выберите услугу или товар.');
-            if (step === 1) { const amount = qs('[data-sale-amount]', form); if (!form.elements.sold_on.value || !amount.validity.valid || Number(amount.value) <= 0) return error('Укажите дату и корректную сумму продажи.'); if (details(selected).no_discounts && Number(amount.value) < Number(selected.price)) return error('Для этой услуги скидки запрещены.'); qs('[name="amount"]', form).value = amount.value; }
+            if (step === 1) { if (!form.elements.contract_id.value) return error('Выберите действующий договор курсанта.'); const amount = qs('[data-sale-amount]', form); if (!form.elements.sold_on.value || !amount.validity.valid || Number(amount.value) <= 0) return error('Укажите дату и корректную сумму продажи.'); if (details(selected).no_discounts && Number(amount.value) < Number(selected.price)) return error('Для этой услуги скидки запрещены.'); qs('[name="amount"]', form).value = amount.value; }
             if (step === 2) {
                 const total = installments.reduce((sum, item) => sum + Math.round(Number(item.amount) * 100), 0);
                 const saleTotal = Math.round(Number(qs('[data-sale-amount]', form).value) * 100);

@@ -11,6 +11,8 @@ $formatBalance = static function (float $amount, string $unit): string {
     return $unit === 'money' ? $value . ' ₽' : ($unit === 'hours' ? $value . ' ч' : $value);
 };
 $studentName = static fn (array $student): string => trim($student['last_name'] . ' ' . $student['first_name'] . ' ' . ($student['middle_name'] ?? ''));
+require __DIR__ . '/_balance_helpers.php';
+
 ?>
 <section class="section-heading reveal">
     <div><h2>Учебные группы</h2><p>Выберите папку, чтобы увидеть её классы, или класс — чтобы открыть список курсантов.</p></div>
@@ -22,14 +24,21 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
         <div class="panel__header"><div><p class="page-eyebrow">Навигатор</p><h3>Папки и классы</h3></div><span class="catalog-count"><?= count($folders) + count($allClasses) ?></span></div>
         <?php if ($currentUser->canManageEducation()): ?><p class="class-drag-hint">Перетащите группу или папку в другую папку, либо используйте меню ⋮</p><?php endif; ?>
         <?php if ($currentUser->canManageEducation()): ?><div class="class-tree__root-drop" data-drop-root>На верхний уровень</div><?php endif; ?>
-        <nav class="class-tree" aria-label="Папки и учебные группы">
-            <?php foreach ($folders as $folder): $folderClasses = $classesByFolder[(int) $folder['id']] ?? []; $folderActive = (int) $folder['id'] === (int) $selectedFolderId; ?>
+        <nav class="class-tree" data-collapsible-tree="classes" aria-label="Папки и учебные группы">
+            <?php
+            $folderChildren = [];
+            foreach ($folders as $treeFolder) $folderChildren[(int) ($treeFolder['parent_id'] ?? 0)][] = $treeFolder;
+            $renderFolders = static function (int $parentId) use (&$renderFolders, $folderChildren, $classesByFolder, $selectedFolderId, $selectedClassId, $selectedClass, $currentUser): void {
+                foreach ($folderChildren[$parentId] ?? [] as $folder):
+                    $folderClasses = $classesByFolder[(int) $folder['id']] ?? [];
+                    $folderActive = (int) $folder['id'] === (int) $selectedFolderId;
+            ?>
                 <section class="class-tree__branch <?= $folderActive ? 'is-active' : '' ?>" data-drop-folder="<?= (int) $folder['id'] ?>" data-parent-folder="<?= (int) ($folder['parent_id'] ?? 0) ?>" style="--folder-depth: <?= (int) $folder['depth'] ?>">
                     <div class="class-tree__folder-row"><a class="class-tree__folder <?= $folderActive && !$selectedClass ? 'is-active' : '' ?>" <?= $currentUser->canManageEducation() ? 'draggable="true" data-drag-folder="' . (int) $folder['id'] . '"' : '' ?> href="<?= e(url('/education/classes?folder_id=' . $folder['id'])) ?>">
                         <span class="folder-mark"><?= icon('folder', 19) ?></span>
                         <span><strong><?= e($folder['name']) ?></strong><small><?= (int) $folder['class_count'] ?> классов · <?= (int) $folder['student_count'] ?> курсантов</small></span>
-                        <?= icon('chevron-right', 15) ?>
-                    </a><?php if ($currentUser->canManageEducation()): ?><button type="button" class="class-move-button class-folder-move" data-move-folder-id="<?= (int) $folder['id'] ?>" data-folder-name="<?= e($folder['name']) ?>" aria-label="Переместить папку <?= e($folder['name']) ?>" title="Переместить папку">⋮</button><?php endif; ?></div>
+                    </a><button class="class-tree__toggle" type="button" data-folder-toggle aria-expanded="true" aria-label="Свернуть папку <?= e($folder['name']) ?>" title="Свернуть папку"><?= icon('chevron-right', 15) ?></button><?php if ($currentUser->canManageEducation()): ?><button type="button" class="class-move-button class-folder-move" data-move-folder-id="<?= (int) $folder['id'] ?>" data-folder-name="<?= e($folder['name']) ?>" aria-label="Переместить папку <?= e($folder['name']) ?>" title="Переместить папку">⋮</button><?php endif; ?></div>
+                    <?php if (!empty($folderChildren[(int) $folder['id']])): ?><div class="class-tree__children"><?php $renderFolders((int) $folder['id']); ?></div><?php endif; ?>
                     <div class="class-tree__classes">
                         <?php foreach ($folderClasses as $treeClass): ?>
                             <div class="class-tree__class-row"><a class="class-tree__class <?= (int) $treeClass['id'] === (int) $selectedClassId ? 'is-active' : '' ?>" <?= $currentUser->canManageEducation() ? 'draggable="true" data-drag-class="' . (int) $treeClass['id'] . '" data-source-folder="' . (int) $folder['id'] . '"' : '' ?> href="<?= e(url('/education/classes?folder_id=' . $folder['id'] . '&class_id=' . $treeClass['id'])) ?>">
@@ -38,12 +47,14 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
                                 <span><strong><?= e($treeClass['group_number']) ?></strong><small><?= e($treeClass['name']) ?> · <?= (int) $treeClass['student_count'] ?> курс.</small></span>
                             </a><?php if ($currentUser->canManageEducation()): ?><button type="button" class="class-move-button" data-move-class="<?= (int) $treeClass['id'] ?>" data-source-folder="<?= (int) $folder['id'] ?>" data-class-name="<?= e($treeClass['group_number']) ?>" aria-label="Переместить группу <?= e($treeClass['group_number']) ?>" title="Переместить в другую папку">⋮</button><?php endif; ?></div>
                         <?php endforeach; ?>
-                        <?php if (!$folderClasses): ?><span class="class-tree__empty">Классов пока нет</span><?php endif; ?>
+                        <?php if (!$folderClasses && empty($folderChildren[(int) $folder['id']])): ?><span class="class-tree__empty">Классов пока нет</span><?php endif; ?>
                     </div>
                 </section>
-            <?php endforeach; ?>
+            <?php endforeach; };
+            $renderFolders(0);
+            ?>
         </nav>
-        <?php if ($currentUser->canManageEducation()): ?><form class="catalog-add-form" method="post" action="<?= e(url('/education/class-folders')) ?>"><?= csrf_field() ?><input name="name" required maxlength="120" placeholder="Новая папка"><select name="parent_id" aria-label="Родительская папка"><option value="">Верхний уровень</option><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>"><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select><input type="hidden" name="status" value="active"><button class="icon-button" type="submit" aria-label="Добавить папку"><?= icon('plus', 17) ?></button></form><?php endif; ?>
+        <?php if ($currentUser->canManageEducation()): ?><form class="catalog-add-form" method="post" action="<?= e(url('/education/class-folders')) ?>"><?= csrf_field() ?><input name="name" required maxlength="120" placeholder="Новая папка"><select name="parent_id" aria-label="Родительская папка"><option value="">Верхний уровень</option><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>" <?= (int) $folder['id'] === (int) $selectedFolderId ? 'selected' : '' ?>><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select><input type="hidden" name="status" value="active"><button class="icon-button" type="submit" aria-label="Добавить папку"><?= icon('plus', 17) ?></button></form><?php endif; ?>
     </aside>
 
     <main class="catalog-content">
@@ -79,7 +90,7 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
                     ?><tr<?= $currentUser->canManageUsers() ? ' data-user-row data-class-student-edit data-user="' . e($userJson) . '"' : '' ?>>
                         <td><div class="table-person"><span class="avatar avatar--soft avatar--sm"><?= e(initials($student['first_name'], $student['last_name'])) ?></span><span><strong><?= e($studentName($student)) ?></strong><small>@<?= e($student['login']) ?> · <?= e($student['phone'] ?: 'телефон не указан') ?></small></span></div></td>
                         <td><div class="checkpoint-strip"><?php foreach ($checkpoints as $checkpoint): $done = !empty($checkpointStates[$studentId][(int) $checkpoint['id']]['is_completed']); ?><form method="post" action="<?= e(url('/education/students/' . $studentId . '/checkpoints/' . $checkpoint['id'])) ?>"><?= csrf_field() ?><input type="hidden" name="completed" value="<?= $done ? '0' : '1' ?>"><input type="hidden" name="class_id" value="<?= (int) $selectedClass['id'] ?>"><button class="checkpoint-chip <?= $done ? 'is-complete' : '' ?>" type="submit" title="<?= e($checkpoint['name']) ?> · <?= $done ? 'снять отметку' : 'отметить пройденной' ?>"><?= e($checkpoint['code']) ?></button></form><?php endforeach; ?><?php if (!$checkpoints): ?><span class="table-subline">Не настроены</span><?php endif; ?></div></td>
-                        <td><div class="balance-strip"><?php foreach ($balanceTypes as $type): $amount = (float) ($balanceValues[$studentId][(int) $type['id']] ?? 0); ?><span class="balance-chip" title="<?= e($type['name']) ?>"><b style="--chip-color:<?= e($type['color']) ?>"><?= e($type['code']) ?></b><span><?= e($formatBalance($amount, $type['unit'])) ?></span></span><?php endforeach; ?><?php if (!$balanceTypes): ?><span class="table-subline">Не настроены</span><?php endif; ?></div></td>
+                        <td><div class="balance-strip"><?php $renderStudentBalances($studentId); ?></div></td>
                         <td><strong><?= e(number_format((float) $student['paid_total'], 0, ',', ' ')) ?> ₽</strong><small class="table-subline">из <?= e(number_format((float) $student['sold_total'], 0, ',', ' ')) ?> ₽</small></td>
                         <td><a class="table-action" href="<?= e(url('/education/students/' . $studentId)) ?>" aria-label="Открыть карточку"><?= icon('chevron-right', 17) ?></a></td>
                     </tr><?php endforeach; ?>
@@ -93,10 +104,12 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
             </section>
 
             <?php if ($currentUser->canManageEducation()): ?>
-                <details class="panel stage-form-panel reveal" <?= !$classes && $selectedFolder ? 'open' : '' ?>>
-                    <summary><span><?= icon('plus', 18) ?></span><strong>Создать учебный класс</strong><small>Класс будет добавлен в папку и связан с учебной программой</small></summary>
-                    <form method="post" action="<?= e(url('/education/classes')) ?>" class="stage-form" data-submit-loading>
+                <button class="button button--primary" type="button" data-dialog-open="classCreateDialog"><?= icon('plus', 18) ?> Создать учебный класс</button>
+                <dialog class="modal" id="classCreateDialog" aria-labelledby="classCreateTitle">
+                    <form method="post" action="<?= e(url('/education/classes')) ?>" class="modal__surface modal__surface--wide" data-submit-loading>
                         <?= csrf_field() ?>
+                        <div class="modal__header"><div><p class="page-eyebrow">Учебные группы</p><h2 id="classCreateTitle">Создать учебный класс</h2><p>Класс будет добавлен в папку и связан с учебной программой.</p></div><button class="icon-button modal__close" type="button" data-dialog-close aria-label="Закрыть"><?= icon('x', 20) ?></button></div>
+                        <div class="modal__body">
                         <div class="form-grid form-grid--three">
                             <label class="field"><span class="field__label">Папка <b>*</b></span><span class="field__control"><select name="folder_id" required><?php foreach ($folders as $folder): ?><option value="<?= (int) $folder['id'] ?>" <?= (int) $folder['id'] === (int) $selectedFolderId ? 'selected' : '' ?>><?= e(str_repeat('— ', (int) $folder['depth']) . $folder['name']) ?></option><?php endforeach; ?></select></span></label>
                             <label class="field"><span class="field__label">Название <b>*</b></span><span class="field__control"><input name="name" required maxlength="120" placeholder="Категория B"></span></label>
@@ -113,9 +126,10 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
                         </div>
                         <fieldset class="schedule-builder"><legend>Еженедельный график</legend><p>Отметьте дни и укажите время. Праздничные даты будут пропущены автоматически.</p><div class="schedule-builder__grid"><?php foreach ($weekdays as $number => $title): ?><div class="schedule-day"><label class="schedule-day__toggle"><input type="checkbox" data-schedule-toggle><i aria-hidden="true"><?= icon('check', 13) ?></i><strong><?= e($title) ?></strong></label><?= time_picker('schedule[' . $number . ']', '09:00', true, 'Время занятия: ' . $title) ?></div><?php endforeach; ?></div></fieldset>
                         <label class="field field--wide stage-form__notes"><span class="field__label">Примечания</span><span class="field__control"><textarea name="notes" rows="3" maxlength="5000" placeholder="Дополнительная информация об учебном классе"></textarea></span></label>
-                        <div class="stage-form__actions"><button class="button button--primary" type="submit"><?= icon('calendar', 18) ?> Создать и построить расписание</button><?php if (!$programs): ?><a class="button button--secondary" href="<?= e(url('/education/programs')) ?>">Сначала добавить программу</a><?php endif; ?></div>
+                        </div>
+                        <div class="modal__footer"><button class="button button--ghost" type="button" data-dialog-close>Отмена</button><?php if (!$programs): ?><a class="button button--secondary" href="<?= e(url('/education/programs')) ?>">Сначала добавить программу</a><?php endif; ?><button class="button button--primary" type="submit"><?= icon('calendar', 18) ?> Создать и построить расписание</button></div>
                     </form>
-                </details>
+                </dialog>
             <?php endif; ?>
 
             <div class="folder-classes stagger-group">
@@ -123,7 +137,7 @@ $studentName = static fn (array $student): string => trim($student['last_name'] 
                     <article class="panel folder-class class-list-item reveal">
                         <header class="folder-class__header"><div><p class="page-eyebrow">Группа <?= e($class['group_number']) ?></p><h3><?= e($class['name']) ?></h3><p><?= e($class['study_program_name'] ?: $class['study_program']) ?> · <?= e($class['teacher_name']) ?></p></div><div><span class="status-pill status-pill--<?= $class['status'] === 'active' ? 'active' : 'blocked' ?>"><i></i><?= e($statuses[$class['status']] ?? $class['status']) ?></span><a class="button button--primary" href="<?= e(url('/education/classes?folder_id=' . $class['folder_id'] . '&class_id=' . $class['id'])) ?>">Показать курсантов</a></div></header>
                         <div class="class-list-item__meta"><span><?= icon('users', 16) ?> <?= (int) $class['student_count'] ?> курсантов</span><span><?= icon('calendar', 16) ?> <?= (int) $class['lesson_count'] ?> занятий</span><span><?= icon('clock', 16) ?> <?= $class['next_lesson_at'] ? e(format_date($class['next_lesson_at'], 'd.m.Y H:i')) : 'Ближайшее занятие не назначено' ?></span></div>
-                        <?php if ($class['students']): ?><details class="class-list-preview"><summary>Быстрый просмотр состава <span><?= count($class['students']) ?></span></summary><div class="data-table-wrap"><table class="data-table stage-table class-roster-table"><thead><tr><th>Курсант</th><th>Контрольные точки</th><th>Балансы</th><th></th></tr></thead><tbody><?php foreach ($class['students'] as $student): $studentId = (int) $student['id']; ?><tr><td><strong><?= e($studentName($student)) ?></strong><small class="table-subline">@<?= e($student['login']) ?></small></td><td><div class="checkpoint-strip"><?php foreach ($checkpoints as $checkpoint): $done = !empty($checkpointStates[$studentId][(int) $checkpoint['id']]['is_completed']); ?><span class="checkpoint-chip <?= $done ? 'is-complete' : '' ?>" title="<?= e($checkpoint['name']) ?>"><?= e($checkpoint['code']) ?></span><?php endforeach; ?></div></td><td><div class="balance-strip"><?php foreach ($balanceTypes as $type): $amount = (float) ($balanceValues[$studentId][(int) $type['id']] ?? 0); ?><span class="balance-chip" title="<?= e($type['name']) ?>"><b style="--chip-color:<?= e($type['color']) ?>"><?= e($type['code']) ?></b><span><?= e($formatBalance($amount, $type['unit'])) ?></span></span><?php endforeach; ?></div></td><td><a class="table-action" href="<?= e(url('/education/students/' . $studentId)) ?>" aria-label="Открыть карточку"><?= icon('chevron-right', 17) ?></a></td></tr><?php endforeach; ?></tbody></table></div></details><?php endif; ?>
+                        <?php if ($class['students']): ?><details class="class-list-preview"><summary>Быстрый просмотр состава <span><?= count($class['students']) ?></span></summary><div class="data-table-wrap"><table class="data-table stage-table class-roster-table"><thead><tr><th>Курсант</th><th>Контрольные точки</th><th>Балансы</th><th></th></tr></thead><tbody><?php foreach ($class['students'] as $student): $studentId = (int) $student['id']; ?><tr><td><strong><?= e($studentName($student)) ?></strong><small class="table-subline">@<?= e($student['login']) ?></small></td><td><div class="checkpoint-strip"><?php foreach ($checkpoints as $checkpoint): $done = !empty($checkpointStates[$studentId][(int) $checkpoint['id']]['is_completed']); ?><span class="checkpoint-chip <?= $done ? 'is-complete' : '' ?>" title="<?= e($checkpoint['name']) ?>"><?= e($checkpoint['code']) ?></span><?php endforeach; ?></div></td><td><div class="balance-strip"><?php $renderStudentBalances($studentId); ?></div></td><td><a class="table-action" href="<?= e(url('/education/students/' . $studentId)) ?>" aria-label="Открыть карточку"><?= icon('chevron-right', 17) ?></a></td></tr><?php endforeach; ?></tbody></table></div></details><?php endif; ?>
                     </article>
                 <?php endforeach; ?>
                 <?php if (!$classes): ?><div class="panel empty-state"><span><?= icon('folder', 28) ?></span><h3>В папке пока нет классов</h3><p><?= $currentUser->canManageEducation() ? 'Создайте учебный класс и выберите эту папку.' : 'Назначенные вам классы здесь не найдены.' ?></p></div><?php endif; ?>

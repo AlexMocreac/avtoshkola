@@ -78,7 +78,10 @@ try {
         'code' => 'КТ-' . $suffix,
         'sort_order' => 10,
     ], $actor->id);
+    $balanceFolderId = EducationCatalog::saveBalanceFolder('Балансы ' . $suffix, null, $actor->id);
+    $balanceChildId = EducationCatalog::saveBalanceFolder('Вложенные ' . $suffix, $balanceFolderId, $actor->id);
     $balanceTypeId = EducationCatalog::saveBalanceType([
+        'folder_id' => $balanceFolderId,
         'name' => 'Баланс ' . $suffix,
         'code' => 'Б-' . $suffix,
         'unit' => 'hours',
@@ -118,6 +121,12 @@ try {
     EducationCatalog::setStudentBalances($student->id, [$balanceTypeId => '12.5'], $actor->id);
     $balances = EducationCatalog::balanceValueMap([$student->id]);
     stageFourCheck((float) ($balances[$student->id][$balanceTypeId] ?? 0) === 12.5, 'Student balance was not saved.');
+    EducationCatalog::moveBalanceType($balanceTypeId, $balanceChildId, $actor->id);
+    stageFourCheck((int) EducationCatalog::findBalanceType($balanceTypeId)['folder_id'] === $balanceChildId, 'Balance type was not moved.');
+    stageFourCheck((float) EducationCatalog::balanceValueMap([$student->id])[$student->id][$balanceTypeId] === 12.5, 'Moving a balance type changed its value.');
+    $folders = EducationCatalog::balanceFolders();
+    $children = array_values(array_filter($folders, static fn (array $folder): bool => (int) $folder['id'] === $balanceChildId));
+    stageFourCheck(count($children) === 1 && (int) $children[0]['depth'] === 1, 'Nested balance folder was not displayed.');
 
     echo "PASS stage-four-learning-structure\n";
 } finally {

@@ -12,6 +12,8 @@ $greeting = $hour < 12 ? 'Доброе утро' : ($hour < 18 ? 'Добрый �
     <div class="welcome-card__visual" aria-hidden="true"><div class="road-sign"><?= brand_symbol() ?></div><div class="road-line road-line--one"></div><div class="road-line road-line--two"></div><div class="road-line road-line--three"></div></div>
 </section>
 
+<?php if ($currentUser->isStudent()): $progressStudentId = $currentUser->id; $canEditContractProgress = false; require __DIR__ . '/../education/students/_contract_progress.php'; endif; ?>
+
 <?php if ($currentUser->canUseCrm()): ?>
     <section class="metric-grid metric-grid--four stagger-group">
         <article class="metric-card reveal"><div class="metric-card__top"><span class="metric-icon metric-icon--blue"><?= icon('user') ?></span><span class="trend">Активные</span></div><strong><?= $stats['students'] ?></strong><p><a href="<?= e(url('/education/students')) ?>">Курсанты</a></p></article>

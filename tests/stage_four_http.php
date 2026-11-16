@@ -164,6 +164,21 @@ try {
     $lookup = $pdo->prepare('SELECT id FROM student_balance_types WHERE code = :code');
     $lookup->execute(['code' => $balanceCode]);
     $ids['balance_type'] = (int) $lookup->fetchColumn();
+    $typeLookup = $pdo->prepare('SELECT folder_id FROM student_balance_types WHERE id = :id');
+    $typeLookup->execute(['id' => $ids['balance_type']]);
+    $balanceFolderId = (int) $typeLookup->fetchColumn();
+    $balancePage = stageFourHttpCall('GET', $baseUrl . '/education/balance-types?folder_id=' . $balanceFolderId, $managerCookies);
+    stageFourExpect($balancePage, 200, 'balance-type-list');
+    $rowId = $ids['balance_type'];
+    if (!preg_match('/<tr id="balance-type-row-' . $rowId . '">(.*?)<\/tr>/s', $balancePage['body'], $row)) throw new RuntimeException('Balance type row not found.');
+    if (preg_match('/<(input|select|textarea)\b/i', $row[1]) || !str_contains($row[1], 'data-dialog-open="balanceTypeEdit' . $rowId . '"')) throw new RuntimeException('Balance type row should be read-only with an edit button.');
+    if (!str_contains($balancePage['body'], 'id="balanceTypeEdit' . $rowId . '"')) throw new RuntimeException('Balance type edit dialog not found.');
+    stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/balance-types/' . $rowId . '/update', $managerCookies, [
+        '_token' => $token, 'name' => 'HTTP4 баланс', 'code' => $balanceCode, 'unit' => 'hours', 'color' => '#278766', 'sort_order' => 7, 'status' => 'active', 'folder_id' => $balanceFolderId,
+    ]), 302, 'balance-type-edit');
+    $typeLookup = $pdo->prepare('SELECT sort_order FROM student_balance_types WHERE id = :id');
+    $typeLookup->execute(['id' => $rowId]);
+    if ((int) $typeLookup->fetchColumn() !== 7) throw new RuntimeException('Balance type edit was not saved.');
 
     stageFourExpect(stageFourHttpCall('POST', $baseUrl . '/education/classes', $managerCookies, [
         '_token' => $token,

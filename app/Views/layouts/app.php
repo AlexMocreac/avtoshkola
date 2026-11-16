@@ -20,7 +20,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
     <meta name="theme-color" content="#4768db">
     <title><?= e($pageTitle ?? 'CRM') ?> · <?= e(env('APP_NAME', 'Автошкола ЦОВ')) ?></title>
     <script src="<?= e(asset('js/appearance.js')) ?>"></script>
-    <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
+    <link rel="stylesheet" href="<?= e(asset('css/app.css') . '?v=' . filemtime(dirname(__DIR__, 3) . '/assets/css/app.css')) ?>">
 </head>
 <body class="app-body" data-base-url="<?= e(base_path()) ?>" data-user-id="<?= $currentUser->id ?>">
     <div class="app-shell" id="appShell">
@@ -221,6 +221,6 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
             <div class="toast toast--<?= e($flash['type']) ?>" data-toast><?= e($flash['message']) ?></div>
         <?php endforeach; ?>
     </div>
-    <script src="<?= e(asset('js/app.js')) ?>" defer></script>
+    <script src="<?= e(asset('js/app.js') . '?v=' . filemtime(dirname(__DIR__, 3) . '/assets/js/app.js')) ?>" defer></script>
 </body>
 </html>

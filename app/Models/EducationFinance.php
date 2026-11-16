@@ -59,7 +59,7 @@ final class EducationFinance
         return Database::connection()->query('SELECT * FROM education_service_folders ORDER BY name')->fetchAll();
     }
 
-    public static function createServiceFolder(array $data): void
+    public static function createServiceFolder(array $data): int
     {
         $name = trim((string) ($data['name'] ?? ''));
         $parent = (int) ($data['parent_id'] ?? 0);
@@ -73,6 +73,42 @@ final class EducationFinance
         }
         $stmt = Database::connection()->prepare('INSERT INTO education_service_folders (name, parent_id) VALUES (?, ?)');
         $stmt->execute([$name, $parent ?: null]);
+        return (int) Database::connection()->lastInsertId();
+    }
+
+    public static function moveServiceFolder(int $id, ?int $parentId): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $folders = [];
+            foreach ($pdo->query('SELECT id, parent_id FROM education_service_folders FOR UPDATE')->fetchAll() as $folder) $folders[(int) $folder['id']] = $folder;
+            if (!isset($folders[$id])) throw new RuntimeException('Папка не найдена.');
+            if ($parentId !== null && !isset($folders[$parentId])) throw new RuntimeException('Папка назначения не найдена.');
+            $seen = [];
+            for ($cursor = $parentId; $cursor !== null; $cursor = isset($folders[$cursor]['parent_id']) ? (int) $folders[$cursor]['parent_id'] : null) {
+                if ($cursor === $id || isset($seen[$cursor])) throw new RuntimeException('Нельзя переместить папку в неё саму или её вложенную папку.');
+                $seen[$cursor] = true;
+            }
+            $stmt = $pdo->prepare('UPDATE education_service_folders SET parent_id = ? WHERE id = ?');
+            $stmt->execute([$parentId, $id]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    public static function moveService(int $id, ?int $folderId, int $userId): void
+    {
+        if (!self::service($id)) throw new RuntimeException('Услуга не найдена.');
+        if ($folderId !== null) {
+            $stmt = Database::connection()->prepare('SELECT id FROM education_service_folders WHERE id = ?');
+            $stmt->execute([$folderId]);
+            if (!$stmt->fetchColumn()) throw new RuntimeException('Папка назначения не найдена.');
+        }
+        $stmt = Database::connection()->prepare('UPDATE education_services SET folder_id = ?, updated_by = ? WHERE id = ?');
+        $stmt->execute([$folderId, $userId, $id]);
     }
 
     public static function service(int $id): ?array
@@ -168,13 +204,19 @@ final class EducationFinance
         if (!empty($details['no_discounts']) && (float) $amount < (float) $service['price']) {
             throw new RuntimeException('Скидки запрещены.');
         }
+        $contractId = (int) ($data['contract_id'] ?? 0);
+        if ($contractId < 1) throw new RuntimeException('Выберите договор для продажи услуги.');
+        $check = Database::connection()->prepare('SELECT id FROM crm_contracts WHERE id = :id AND student_id = :student_id AND deleted_at IS NULL AND status = "active"');
+        $check->execute(['id' => $contractId, 'student_id' => $studentId]);
+        if (!$check->fetchColumn()) throw new RuntimeException('Выберите действующий договор этого курсанта.');
         $soldOn = self::date($data['sold_on'] ?? null) ?: date('Y-m-d');
         $stmt = Database::connection()->prepare(
-            'INSERT INTO student_sales (student_id, service_id, service_name, service_data, amount, sold_on, notes, sold_by)
-             VALUES (:student_id, :service_id, :service_name, :service_data, :amount, :sold_on, :notes, :sold_by)'
+            'INSERT INTO student_sales (student_id, contract_id, service_id, service_name, service_data, amount, sold_on, notes, sold_by)
+             VALUES (:student_id, :contract_id, :service_id, :service_name, :service_data, :amount, :sold_on, :notes, :sold_by)'
         );
         $stmt->execute([
             'student_id' => $studentId,
+            'contract_id' => $contractId,
             'service_id' => (int) $service['id'],
             'service_name' => (string) $service['name'],
             'service_data' => $service['service_data'],
@@ -184,6 +226,28 @@ final class EducationFinance
             'sold_by' => $userId,
         ]);
         return (int) Database::connection()->lastInsertId();
+    }
+
+    public static function linkLegacySaleToContract(int $studentId, int $saleId, int $contractId): void
+    {
+        $pdo = Database::connection();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) $pdo->beginTransaction(); else $pdo->exec('SAVEPOINT link_legacy_sale');
+        try {
+            $check = $pdo->prepare('SELECT id FROM crm_contracts WHERE id = ? AND student_id = ? AND deleted_at IS NULL');
+            $check->execute([$contractId, $studentId]);
+            if (!$check->fetchColumn()) throw new RuntimeException('Выберите договор этого курсанта.');
+            $sale = $pdo->prepare('SELECT id, contract_id FROM student_sales WHERE id = ? AND student_id = ? AND status = "active" FOR UPDATE');
+            $sale->execute([$saleId, $studentId]);
+            $row = $sale->fetch();
+            if (!$row || $row['contract_id'] !== null) throw new RuntimeException('Продажа не найдена или уже привязана к договору.');
+            $pdo->prepare('UPDATE student_sales SET contract_id = ? WHERE id = ?')->execute([$contractId, $saleId]);
+            $pdo->prepare('UPDATE student_payments SET contract_id = ? WHERE sale_id = ? AND student_id = ?')->execute([$contractId, $saleId, $studentId]);
+            if ($ownsTransaction) $pdo->commit(); else $pdo->exec('RELEASE SAVEPOINT link_legacy_sale');
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction) $pdo->rollBack(); else $pdo->exec('ROLLBACK TO SAVEPOINT link_legacy_sale');
+            throw $exception;
+        }
     }
 
     public static function changeUnpaidSale(int $studentId, int $saleId, ?array $data): void
@@ -200,6 +264,18 @@ final class EducationFinance
             $stmt->execute([$saleId]);
             if ((int) $stmt->fetchColumn() > 0) { throw new RuntimeException('Продажу с оплатами нельзя изменить или удалить.'); }
             if ($data === null) {
+                if (!empty($sale['contract_id'])) {
+                    $allocated = [];
+                    $details = json_decode($sale['service_data'] ?? '', true) ?: [];
+                    foreach ($details['allocations'] ?? [] as $row) foreach ($row['balances'] ?? [] as $typeId => $amount) $allocated[(int) $typeId] = ($allocated[(int) $typeId] ?? 0) + max(0, (float) $amount);
+                    foreach (self::contractBalanceProgress($studentId) as $group) {
+                        if ((int) $group['contract']['id'] !== (int) $sale['contract_id']) continue;
+                        foreach ($allocated as $typeId => $amount) {
+                            $balance = $group['balances'][$typeId] ?? null;
+                            if ($balance && $balance['manual'] + $balance['automatic'] > $balance['assigned'] - $amount + 0.00001) throw new RuntimeException('Нельзя удалить продажу: по договору уже учтены занятия из этой услуги.');
+                        }
+                    }
+                }
                 $stmt = $pdo->prepare('UPDATE student_sales SET status = "cancelled" WHERE id = ?');
                 $stmt->execute([$saleId]);
             } else {
@@ -215,6 +291,85 @@ final class EducationFinance
             if ($ownsTransaction) { $pdo->commit(); } else { $pdo->exec('RELEASE SAVEPOINT change_sale'); }
         } catch (\Throwable $exception) {
             if ($ownsTransaction) { $pdo->rollBack(); } else { $pdo->exec('ROLLBACK TO SAVEPOINT change_sale'); }
+            throw $exception;
+        }
+    }
+
+    /** Sold allocations are taken from the immutable sale snapshot, not the current service. */
+    public static function contractBalanceProgress(int $studentId): array
+    {
+        return self::contractBalanceProgressMany([$studentId])[$studentId] ?? [];
+    }
+
+    public static function contractBalanceProgressMany(array $studentIds): array
+    {
+        $studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds), static fn (int $id): bool => $id > 0)));
+        if (!$studentIds) return [];
+        $pdo = Database::connection();
+        $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
+        $stmt = $pdo->prepare('SELECT c.id, c.student_id, c.contract_number FROM crm_contracts c WHERE c.student_id IN (' . $placeholders . ') AND c.deleted_at IS NULL ORDER BY c.signed_on DESC, c.id DESC');
+        $stmt->execute($studentIds);
+        $contracts = [];
+        foreach ($stmt->fetchAll() as $contract) $contracts[(int) $contract['id']] = ['contract' => $contract, 'balances' => []];
+        if (!$contracts) return [];
+        $types = [];
+        foreach (EducationCatalog::balanceTypes() as $type) $types[(int) $type['id']] = $type;
+        $stmt = $pdo->prepare('SELECT s.contract_id, s.service_data, s.amount, COALESCE((SELECT SUM(p.amount) FROM student_payments p WHERE p.sale_id = s.id), 0) AS paid_total FROM student_sales s JOIN crm_contracts c ON c.id = s.contract_id AND c.student_id = s.student_id WHERE s.student_id IN (' . $placeholders . ') AND c.deleted_at IS NULL AND s.status = "active"');
+        $stmt->execute($studentIds);
+        foreach ($stmt->fetchAll() as $sale) {
+            $contractId = (int) $sale['contract_id'];
+            if (!isset($contracts[$contractId])) continue;
+            $details = json_decode($sale['service_data'] ?? '', true) ?: [];
+            foreach ($details['allocations'] ?? [] as $allocation) {
+                $threshold = (float) ($allocation['amount'] ?? 0);
+                foreach ($allocation['balances'] ?? [] as $typeId => $rawAmount) {
+                    $typeId = (int) $typeId;
+                    $amount = (float) $rawAmount;
+                    if ($amount <= 0 || !isset($types[$typeId])) continue;
+                    if (!isset($contracts[$contractId]['balances'][$typeId])) $contracts[$contractId]['balances'][$typeId] = ['type' => $types[$typeId], 'assigned' => 0.0, 'paid' => 0.0, 'manual' => 0.0, 'automatic' => 0.0];
+                    $contracts[$contractId]['balances'][$typeId]['assigned'] += $amount;
+                    if (($threshold > 0 && $threshold <= (float) $sale['paid_total'] + 0.00001) || ((float) $sale['amount'] > 0 && (float) $sale['paid_total'] + 0.00001 >= (float) $sale['amount'])) $contracts[$contractId]['balances'][$typeId]['paid'] += $amount;
+                }
+            }
+        }
+        $stmt = $pdo->prepare('SELECT u.contract_id, u.balance_type_id, u.amount FROM contract_balance_manual_usage u JOIN crm_contracts c ON c.id = u.contract_id WHERE c.student_id IN (' . $placeholders . ') AND c.deleted_at IS NULL');
+        $stmt->execute($studentIds);
+        foreach ($stmt->fetchAll() as $usage) {
+            $contractId = (int) $usage['contract_id']; $typeId = (int) $usage['balance_type_id'];
+            if (isset($contracts[$contractId]['balances'][$typeId])) $contracts[$contractId]['balances'][$typeId]['manual'] = (float) $usage['amount'];
+        }
+        $stmt = $pdo->prepare('SELECT a.contract_id, a.balance_type_id, SUM(a.amount) AS amount FROM class_lesson_attendance a JOIN crm_contracts c ON c.id = a.contract_id WHERE c.student_id IN (' . $placeholders . ') AND c.deleted_at IS NULL GROUP BY a.contract_id, a.balance_type_id');
+        $stmt->execute($studentIds);
+        foreach ($stmt->fetchAll() as $usage) {
+            $contractId = (int) $usage['contract_id']; $typeId = (int) $usage['balance_type_id'];
+            if (isset($contracts[$contractId]['balances'][$typeId])) $contracts[$contractId]['balances'][$typeId]['automatic'] = (float) $usage['amount'];
+        }
+        $result = [];
+        foreach ($contracts as $contract) if ($contract['balances']) $result[(int) $contract['contract']['student_id']][] = $contract;
+        return $result;
+    }
+
+    public static function setContractManualUsage(int $studentId, int $contractId, int $typeId, $value, int $userId): void
+    {
+        $value = str_replace(',', '.', trim((string) $value));
+        if (!preg_match('/^\d{1,10}(?:\.\d{1,2})?$/', $value)) throw new RuntimeException('Укажите корректное количество проведённых часов или занятий.');
+        $pdo = Database::connection();
+        $owns = !$pdo->inTransaction();
+        if ($owns) $pdo->beginTransaction(); else $pdo->exec('SAVEPOINT manual_contract_usage');
+        try {
+            $lock = $pdo->prepare('SELECT id FROM student_sales WHERE contract_id = ? AND student_id = ? AND status = "active" ORDER BY id FOR UPDATE');
+            $lock->execute([$contractId, $studentId]);
+            $lock->fetchAll();
+            $found = false;
+            foreach (self::contractBalanceProgress($studentId) as $group) {
+                if ((int) $group['contract']['id'] === $contractId && isset($group['balances'][$typeId])) { $found = true; break; }
+            }
+            if (!$found) throw new RuntimeException('Начисление по договору не найдено.');
+            $stmt = $pdo->prepare('INSERT INTO contract_balance_manual_usage (contract_id, balance_type_id, amount, updated_by) VALUES (:contract_id, :type_id, :amount, :updated_by) ON DUPLICATE KEY UPDATE amount = VALUES(amount), updated_by = VALUES(updated_by)');
+            $stmt->execute(['contract_id' => $contractId, 'type_id' => $typeId, 'amount' => $value, 'updated_by' => $userId]);
+            if ($owns) $pdo->commit(); else $pdo->exec('RELEASE SAVEPOINT manual_contract_usage');
+        } catch (\Throwable $exception) {
+            if ($owns) $pdo->rollBack(); else $pdo->exec('ROLLBACK TO SAVEPOINT manual_contract_usage');
             throw $exception;
         }
     }
@@ -255,7 +410,7 @@ final class EducationFinance
             $paidBefore = 0.0;
             if ($saleId !== null) {
                 // Serialize payments for a sale, including the balance credits they trigger.
-                $saleCheck = $pdo->prepare('SELECT id, amount, service_data FROM student_sales WHERE id = :id AND student_id = :student_id AND status = "active" FOR UPDATE');
+                $saleCheck = $pdo->prepare('SELECT id, contract_id, amount, service_data FROM student_sales WHERE id = :id AND student_id = :student_id AND status = "active" FOR UPDATE');
                 $saleCheck->execute(['id' => $saleId, 'student_id' => $studentId]);
                 $sale = $saleCheck->fetch();
                 if (!$sale) { throw new RuntimeException('Продажа не найдена.'); }
@@ -267,10 +422,10 @@ final class EducationFinance
                 }
             }
             $paidOn = self::dateTime($data['paid_on'] ?? null) ?: date('Y-m-d H:i:s');
-            $insert = $pdo->prepare('INSERT INTO student_payments (student_id, sale_id, kassa_id, amount, paid_on, notes, accepted_by) VALUES (:student_id, :sale_id, :kassa_id, :amount, :paid_on, :notes, :accepted_by)');
-            $insert->execute(['student_id' => $studentId, 'sale_id' => $saleId, 'kassa_id' => $kassaId, 'amount' => $amount, 'paid_on' => $paidOn, 'notes' => self::nullable($data['notes'] ?? null), 'accepted_by' => $userId]);
+            $insert = $pdo->prepare('INSERT INTO student_payments (student_id, contract_id, sale_id, kassa_id, amount, paid_on, notes, accepted_by) VALUES (:student_id, :contract_id, :sale_id, :kassa_id, :amount, :paid_on, :notes, :accepted_by)');
+            $insert->execute(['student_id' => $studentId, 'contract_id' => $sale['contract_id'] ?? null, 'sale_id' => $saleId, 'kassa_id' => $kassaId, 'amount' => $amount, 'paid_on' => $paidOn, 'notes' => self::nullable($data['notes'] ?? null), 'accepted_by' => $userId]);
             $paymentId = (int) $pdo->lastInsertId();
-            if ($sale) {
+            if ($sale && empty($sale['contract_id'])) {
                 $details = json_decode($sale['service_data'] ?? '', true) ?: [];
                 $credit = $pdo->prepare('INSERT INTO student_balances (student_id, balance_type_id, amount, updated_by) SELECT :student_id, id, :amount, :updated_by FROM student_balance_types WHERE id = :type_id ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount), updated_by = VALUES(updated_by)');
                 foreach ($details['allocations'] ?? [] as $row) {
