@@ -10,6 +10,18 @@ $currentUser = $currentUser ?? Auth::user();
 $flashes = Flash::pull();
 $layoutUnread = isset($unreadMessages) ? (int) $unreadMessages : Conversation::totalUnread($currentUser->id);
 $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->canUseCrm() ? Warning::count($currentUser) : 0);
+$workspaceRoutes = ['/dashboard', '/calendar', '/chat'];
+if ($currentUser->canUseCrm()) {
+    $workspaceRoutes[] = '/events';
+    if ($currentUser->canUseTasks()) $workspaceRoutes[] = '/tasks';
+}
+if ($currentUser->isStudent()) $workspaceRoutes[] = '/education/students/' . $currentUser->id;
+$educationRoutes = ['/education/classes', '/education/students'];
+if ($currentUser->canManageEducation()) {
+    array_push($educationRoutes, '/education/programs', '/education/checkpoints', '/education/balance-types', '/education/services');
+}
+if ($currentUser->canManageKassas()) $educationRoutes[] = '/education/kassas';
+$navGroupActive = static fn (array $routes): bool => (bool) array_filter($routes, 'is_active_route');
 ?>
 <!doctype html>
 <html lang="ru">
@@ -39,7 +51,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
             </div>
 
             <nav class="sidebar__nav">
-                <details class="nav-group" open>
+                <details class="nav-group" <?= $navGroupActive($workspaceRoutes) ? 'open' : '' ?>>
                         <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('grid') ?></span><span class="nav-group__title">Рабочее пространство</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
                         <div class="nav-group__items">
                 <a class="nav-item <?= is_active_route('/dashboard') ? 'is-active' : '' ?>" href="<?= e(url('/dashboard')) ?>">
@@ -81,7 +93,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                 </div>
                 </details>
                 <?php if ($currentUser->canUseCrm()): ?>
-                    <details class="nav-group" open>
+                    <details class="nav-group" <?= $navGroupActive(['/crm/leads', '/crm/contracts']) ? 'open' : '' ?>>
                         <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('users') ?></span><span class="nav-group__title">CRM</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
                         <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/crm/leads') ? 'is-active' : '' ?>" href="<?= e(url('/crm/leads')) ?>">
@@ -96,7 +108,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     </details>
                 <?php endif; ?>
                 <?php if ($currentUser->canManageUsers()): ?>
-                    <details class="nav-group" open>
+                    <details class="nav-group" <?= $navGroupActive(['/students', '/staff']) ? 'open' : '' ?>>
                         <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('shield') ?></span><span class="nav-group__title">Администрирование</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
                         <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/students') ? 'is-active' : '' ?>" href="<?= e(url('/students')) ?>">
@@ -111,7 +123,7 @@ $layoutWarnings = isset($warningCount) ? (int) $warningCount : ($currentUser->ca
                     </details>
                 <?php endif; ?>
                 <?php if ($currentUser->canUseEducation()): ?>
-                    <details class="nav-group" open>
+                    <details class="nav-group" <?= $navGroupActive($educationRoutes) ? 'open' : '' ?>>
                         <summary class="nav-group__heading"><span class="nav-group__icon"><?= icon('book-open') ?></span><span class="nav-group__title">Обучение</span><span class="nav-group__arrow"><?= icon('chevron-right', 16) ?></span></summary>
                         <div class="nav-group__items">
                     <a class="nav-item <?= is_active_route('/education/classes') ? 'is-active' : '' ?>" href="<?= e(url('/education/classes')) ?>">
