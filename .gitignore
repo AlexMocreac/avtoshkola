@@ -1,5 +1,6 @@
 .DS_Store
 .env
+/vendor/
 /storage/logs/*.log
 /storage/cache/*
 !/storage/logs/.gitkeep

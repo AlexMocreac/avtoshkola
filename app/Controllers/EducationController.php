@@ -387,11 +387,21 @@ final class EducationController
             'class_id' => (int) ($_GET['class_id'] ?? 0),
             'training_status' => trim((string) ($_GET['training_status'] ?? '')),
         ];
+        $students = StudentProfile::all($user, $filters);
+        $studentIds = array_map(static fn (array $student): int => (int) $student['id'], $students);
         View::render('education/students/index', [
             'pageTitle' => 'Курсанты',
             'pageEyebrow' => 'Курсанты и группы',
             'currentUser' => $user,
-            'students' => StudentProfile::all($user, $filters),
+            'students' => $students,
+            'saleServices' => $user->canManageEducation() && $user->canManageUsers() ? EducationFinance::services(true) : [],
+            'studentSales' => $user->canManageEducation() && $user->canManageUsers() ? array_combine($studentIds, array_map([EducationFinance::class, 'sales'], $studentIds)) : [],
+            'studentContracts' => $user->canManageEducation() && $user->canManageUsers() ? array_combine($studentIds, array_map([StudentProfile::class, 'contracts'], $studentIds)) : [],
+            'checkpoints' => EducationCatalog::checkpoints(true),
+            'checkpointStates' => EducationCatalog::checkpointStateMap($studentIds),
+            'balanceTypes' => EducationCatalog::balanceTypes(true),
+            'balanceValues' => EducationCatalog::balanceValueMap($studentIds),
+            'contractProgressByStudent' => EducationFinance::contractBalanceProgressMany($studentIds),
             'classes' => StudyClass::all($user),
             'statuses' => StudentProfile::TRAINING_STATUSES,
             'filters' => $filters,
@@ -764,13 +774,16 @@ final class EducationController
         $user = Auth::requireLogin();
         $student = $this->studentOrFail((int) $id, $user);
         $contracts = StudentProfile::contracts((int) $id);
-        View::render('education/students/contract-print', [
-            'pageTitle' => 'Договор курсанта',
-            'currentUser' => $user,
-            'student' => $student,
-            'class' => StudyClass::currentForStudent((int) $id),
-            'contract' => $contracts[0] ?? null,
-        ], 'layouts/print');
+        $class = StudyClass::currentForStudent((int) $id);
+        $contract = $contracts[0] ?? null;
+        ob_start();
+        require dirname(__DIR__) . '/Views/education/students/contract-print.php';
+        $html = (string) ob_get_clean();
+
+        $pdf = new \Mpdf\Mpdf(['tempDir' => dirname(__DIR__, 2) . '/storage/cache', 'default_font' => 'dejavusans']);
+        $pdf->WriteHTML('<style>body { font-size: 11pt; } h1 { font-size: 18pt; } h2 { font-size: 14pt; margin-top: 20pt; } p { margin: 6pt 0; } .signature { margin-top: 32pt; }</style>' . $html);
+        header('Cache-Control: private, no-store');
+        $pdf->Output('dogovor.pdf', \Mpdf\Output\Destination::INLINE);
     }
 
     public function holidays(): void

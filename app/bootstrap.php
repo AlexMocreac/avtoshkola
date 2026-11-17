@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Core\Env;
 
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+
 spl_autoload_register(static function (string $class): void {
     $prefix = 'App\\';
     if (!str_starts_with($class, $prefix)) {

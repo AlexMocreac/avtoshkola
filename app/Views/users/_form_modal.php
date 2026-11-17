@@ -6,7 +6,7 @@
             <button class="icon-button modal__close" type="button" data-dialog-close aria-label="Закрыть"><?= icon('x', 20) ?></button>
         </div>
         <div class="modal__body">
-            <?php if (!empty($showStudentPhoto)): ?><div class="user-modal__layout"><aside class="user-modal__photo"><div class="user-modal__portrait"><img data-user-photo alt="Фото курсанта" hidden><span data-user-photo-placeholder></span></div><span>Фото курсанта</span></aside><?php endif; ?>
+            <?php if (!empty($showStudentPhoto)): ?><div class="user-modal__layout"><aside class="user-modal__photo"><div class="user-modal__portrait"><img data-user-photo alt="Фото курсанта" hidden><span data-user-photo-placeholder></span></div><label class="button button--secondary user-modal__photo-choose">Выбрать фото<input class="sr-only" type="file" name="photo" accept="image/jpeg,image/png,image/webp" data-user-photo-input></label><small>JPG, PNG или WEBP · до 5 МБ</small></aside><?php endif; ?>
             <div class="form-grid">
                 <label class="field"><span class="field__label">Фамилия <b>*</b></span><span class="field__control"><input name="last_name" required maxlength="80"></span><small class="field__error" data-error-for="last_name"></small></label>
                 <label class="field"><span class="field__label">Имя <b>*</b></span><span class="field__control"><input name="first_name" required maxlength="80"></span><small class="field__error" data-error-for="first_name"></small></label>

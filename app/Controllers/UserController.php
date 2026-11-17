@@ -6,12 +6,17 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Csrf;
+use App\Core\Database;
 use App\Core\Response;
 use App\Core\Validator;
 use App\Core\View;
 use App\Models\User;
 use App\Models\ActivityLog;
+use App\Models\StudentFile;
+use App\Models\StudentProfile;
 use PDOException;
+use RuntimeException;
+use Throwable;
 
 final class UserController
 {
@@ -98,12 +103,25 @@ final class UserController
         if ($errors) {
             Response::json(['ok' => false, 'message' => 'Проверьте заполнение полей.', 'errors' => $errors], 422);
         }
+        $photoPath = null;
+        $committed = false;
         try {
+            if (isset($_FILES['photo']) && (int) ($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                if (!$target->isStudent() || $_POST['role'] !== User::ROLE_STUDENT) {
+                    Response::json(['ok' => false, 'message' => 'Фотографию можно добавить только курсанту.'], 422);
+                }
+                $photoPath = StudentFile::storePhoto($target->id, $_FILES['photo']);
+            }
             $data = $_POST;
             $newMonths = $data['role'] === User::ROLE_STUDENT && ($data['access_months'] ?? '') !== '' ? (int) $data['access_months'] : null;
             $data['access_months_changed'] = $target->role !== $data['role'] || $target->accessMonths !== $newMonths
                 || ($data['restart_access'] ?? '') === '1';
+            $pdo = Database::connection();
+            $pdo->beginTransaction();
             $user = User::updateUser($target->id, $data, $admin->id);
+            if ($photoPath !== null) StudentProfile::setPhoto($target->id, $photoPath);
+            $pdo->commit();
+            $committed = true;
             $changes = ActivityLog::changes(
                 $this->userAuditState($target),
                 $this->userAuditState($user),
@@ -117,9 +135,21 @@ final class UserController
                     'changes' => $changes,
                 ]);
             }
+            if ($photoPath !== null) {
+                ActivityLog::record('student.photo_updated', 'Обновлена фотография курсанта', $admin, [$user], 'user', $user->id, [
+                    'name' => $user->fullName(), 'role_key' => User::ROLE_STUDENT,
+                ]);
+            }
             Response::json(['ok' => true, 'message' => 'Данные пользователя обновлены.', 'user' => $this->serialize($user)]);
-        } catch (PDOException $exception) {
-            $this->uniqueError($exception);
+        } catch (Throwable $exception) {
+            if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+            if ($photoPath !== null && !$committed) {
+                $path = StudentFile::absolutePath($photoPath);
+                if ($path !== null) @unlink($path);
+            }
+            if ($exception instanceof PDOException) $this->uniqueError($exception);
+            if ($exception instanceof RuntimeException) Response::json(['ok' => false, 'message' => $exception->getMessage()], 422);
+            throw $exception;
         }
     }
 

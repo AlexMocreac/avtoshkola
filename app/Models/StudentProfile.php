@@ -63,7 +63,8 @@ final class StudentProfile
             $params['teacher_id'] = $viewer->id;
         }
         $stmt = Database::connection()->prepare(
-            'SELECT u.id, u.login, u.email, u.phone, u.first_name, u.last_name, u.middle_name, u.status,
+            'SELECT u.id, u.login, u.email, u.phone, u.first_name, u.last_name, u.middle_name, u.status, u.role, u.access_months, sp.photo_path,
+                    (u.access_expires_at IS NOT NULL AND u.access_expires_at <= NOW()) AS access_expired,
                     sp.training_status, sp.driving_allowed, sp.registration_number, sp.birth_date,
                     c.id AS class_id, c.name AS class_name, c.group_number, c.teacher_id,
                     COALESCE((SELECT SUM(s.amount) FROM student_sales s WHERE s.student_id = u.id AND s.status = "active"), 0) AS sold_total,

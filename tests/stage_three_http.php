@@ -28,13 +28,13 @@ function stageThreeHttpCall(string $method, string $url, string $cookieFile, arr
         CURLOPT_TIMEOUT => 30,
     ]);
     if ($method !== 'GET') {
-        curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data));
+        curl_setopt($curl, CURLOPT_POSTFIELDS, array_filter($data, static fn ($value) => $value instanceof CURLFile) ? $data : http_build_query($data));
     }
     $body = curl_exec($curl);
     if ($body === false) {
         throw new RuntimeException(curl_error($curl));
     }
-    return ['status' => curl_getinfo($curl, CURLINFO_RESPONSE_CODE), 'body' => $body];
+    return ['status' => curl_getinfo($curl, CURLINFO_RESPONSE_CODE), 'content_type' => curl_getinfo($curl, CURLINFO_CONTENT_TYPE), 'body' => $body];
 }
 
 function stageThreeToken(string $html): string
@@ -176,10 +176,40 @@ try {
     $pdo->prepare('INSERT INTO class_lessons (class_id, teacher_id, title, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')->execute([$ids['class'], $ids['teacher'], 'Проведённое занятие', date('Y-m-d H:i:s', time() - 7200), date('Y-m-d H:i:s', time() - 1800)]);
     $pastLesson = (int) $pdo->lastInsertId();
     $teacherToken = stageThreeLogin($baseUrl, $teacherCookies, 'stage3.teacher.' . $suffix, $password);
+    $photoTestPath = tempnam(sys_get_temp_dir(), 'avto-photo-');
+    file_put_contents($photoTestPath, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
+    $photoUpdate = ['_token' => $token, 'first_name' => 'HTTP', 'last_name' => 'Курсант', 'role' => 'student', 'login' => 'stage3.student.' . $suffix, 'email' => 'stage3.student.' . $suffix . '@example.test', 'phone' => '+7 900 444-55-66', 'photo' => new CURLFile($photoTestPath, 'image/png', 'photo.png')];
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/update', $managerCookies, $photoUpdate), 200, 'student-photo-update');
+    $photoPath = $pdo->query('SELECT photo_path FROM student_profiles WHERE student_id = ' . $ids['student'])->fetchColumn();
+    if (!$photoPath || !is_file(dirname(__DIR__) . '/' . $photoPath)) throw new RuntimeException('Student photo was not saved.');
+    $photoResponse = stageThreeHttpCall('GET', $baseUrl . '/education/students/' . $ids['student'] . '/photo', $managerCookies);
+    stageThreeExpect($photoResponse, 200, 'student-photo-view');
+    if (!str_starts_with((string) $photoResponse['content_type'], 'image/png')) throw new RuntimeException('Student photo could not be displayed.');
+    file_put_contents($photoTestPath, 'not an image');
+    $photoUpdate['first_name'] = 'Changed';
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/update', $managerCookies, $photoUpdate), 422, 'student-photo-invalid');
+    if ($pdo->query('SELECT first_name FROM users WHERE id = ' . $ids['student'])->fetchColumn() !== 'HTTP') throw new RuntimeException('Invalid photo changed the profile.');
+    $photoUpdate['_token'] = $teacherToken;
+    stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/users/' . $ids['student'] . '/update', $teacherCookies, $photoUpdate), 403, 'student-photo-unauthorized');
     stageThreeExpect(stageThreeHttpCall('POST', $baseUrl . '/education/classes/' . $ids['class'] . '/lessons/' . $pastLesson . '/attendance', $teacherCookies, ['_token' => $teacherToken, 'attendance' => [$ids['student'] => $ids['contract']]]), 302, 'lesson-attendance');
     $progress = \App\Models\EducationFinance::contractBalanceProgress($ids['student']);
     if (($progress[0]['balances'][$balanceTypeId]['automatic'] ?? null) !== 1.5) throw new RuntimeException('Lesson attendance did not update contract progress.');
     $studentToken = stageThreeLogin($baseUrl, $studentCookies, 'stage3.student.' . $suffix, $password);
+    $studentPage = stageThreeHttpCall('GET', $baseUrl . '/education/students/' . $ids['student'], $managerCookies);
+    stageThreeExpect($studentPage, 200, 'student-contract-list');
+    if (!preg_match('~<section[^>]+id="contracts".*?</section>~s', $studentPage['body'], $contractSection)
+        || substr_count($contractSection[0], '/contract/print') !== 1
+        || !str_contains($contractSection[0], '>Договор</a>')
+        || str_contains($contractSection[0], 'Создать договор')) {
+        throw new RuntimeException('Student contracts tab should contain a single document link.');
+    }
+    foreach ([$managerCookies, $studentCookies] as $cookies) {
+        $pdf = stageThreeHttpCall('GET', $baseUrl . '/education/students/' . $ids['student'] . '/contract/print', $cookies);
+        stageThreeExpect($pdf, 200, 'student-contract-pdf');
+        if (!str_starts_with((string) $pdf['content_type'], 'application/pdf') || !str_starts_with($pdf['body'], '%PDF-')) {
+            throw new RuntimeException('Student contract response is not a PDF.');
+        }
+    }
     $studentHome = stageThreeHttpCall('GET', $baseUrl . '/dashboard', $studentCookies);
     stageThreeExpect($studentHome, 200, 'student-home');
     if (!str_contains($studentHome['body'], 'Занятия по договорам') || !str_contains($studentHome['body'], '>4 ч</td>')) throw new RuntimeException('Student progress is missing from the home page.');
@@ -217,7 +247,7 @@ try {
     $studentPage = stageThreeHttpCall('GET', $baseUrl . '/education/students/' . $ids['student'], $managerCookies);
     stageThreeExpect($studentPage, 200, 'student-page');
     if (substr_count($studentPage['body'], 'data-student-tab="') !== 7
-        || substr_count($studentPage['body'], 'data-date-picker') < 10
+        || substr_count($studentPage['body'], 'data-date-picker') < 7
         || substr_count($studentPage['body'], 'data-file-input') < 2
         || str_contains($studentPage['body'], 'type="date"')
         || str_contains($studentPage['body'], 'type="datetime-local"')) {
@@ -243,6 +273,8 @@ try {
 
     echo "PASS stage-three-http\n";
 } finally {
+    if (!empty($photoPath)) @unlink(dirname(__DIR__) . '/' . $photoPath);
+    if (!empty($photoTestPath)) @unlink($photoTestPath);
     if ($ids['manager']) {
         $userIds = array_filter([$ids['manager'], $ids['teacher'], $ids['student']]);
         $placeholders = implode(',', array_fill(0, count($userIds), '?'));

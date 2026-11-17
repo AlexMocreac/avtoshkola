@@ -729,6 +729,7 @@
     const userForm = qs('#userForm');
     const passwordField = qs('#passwordField');
     const userFormError = qs('#userFormError');
+    let userPhotoPreviewUrl = null;
 
     function clearUserErrors() {
         qsa('.field.has-error', userForm).forEach((field) => field.classList.remove('has-error'));
@@ -741,10 +742,14 @@
         if (!userForm) return;
         setFormLoading(userForm, false);
         userForm.reset();
+        if (userPhotoPreviewUrl) URL.revokeObjectURL(userPhotoPreviewUrl);
+        userPhotoPreviewUrl = null;
         clearUserErrors();
         const editing = Boolean(user);
         const photo = qs('[data-user-photo]', userForm);
         const photoPlaceholder = qs('[data-user-photo-placeholder]', userForm);
+        const photoInput = qs('[data-user-photo-input]', userForm);
+        if (photoInput) photoInput.disabled = !editing;
         if (photo && photoPlaceholder) {
             photo.hidden = !user?.photo_url;
             if (user?.photo_url) photo.src = user.photo_url;
@@ -771,6 +776,22 @@
         }
         syncPhoneMasks(userForm);
     }
+
+    userForm?.querySelector('[data-user-photo-input]')?.addEventListener('change', (event) => {
+        const photo = qs('[data-user-photo]', userForm);
+        const placeholder = qs('[data-user-photo-placeholder]', userForm);
+        if (userPhotoPreviewUrl) URL.revokeObjectURL(userPhotoPreviewUrl);
+        userPhotoPreviewUrl = event.target.files[0] ? URL.createObjectURL(event.target.files[0]) : null;
+        if (userPhotoPreviewUrl) {
+            photo.src = userPhotoPreviewUrl;
+            photo.hidden = false;
+            placeholder.hidden = true;
+        }
+    });
+    userForm?.querySelector('[data-user-photo]')?.addEventListener('error', (event) => {
+        event.currentTarget.hidden = true;
+        qs('[data-user-photo-placeholder]', userForm).hidden = false;
+    });
 
     qsa('[data-user-create]').forEach((button) => button.addEventListener('click', () => {
         fillUserForm();
@@ -1485,13 +1506,6 @@
         });
     }
 
-    const directSaleService = qs('[data-direct-sale-service]');
-    if (directSaleService) directSaleService.addEventListener('change', () => {
-        const price = directSaleService.selectedOptions[0]?.dataset.price;
-        const amount = qs('[name="amount"]', directSaleService.form);
-        if (amount) amount.value = price || '';
-    });
-
     const attendanceDialog = qs('#classAttendanceDialog');
     const attendanceDataElement = qs('#classAttendanceData');
     if (attendanceDialog && attendanceDataElement) {
@@ -2188,7 +2202,7 @@
             if (!sales.length) { const row = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = 'Продаж пока нет'; row.append(td); rows.append(row); }
             qs('[data-sales-totals]', salesDialog).textContent = `Итого начислено: ${money(total)} · Итого оплачено: ${money(paid)} · Задолженность: ${money(Math.max(0, total - paid))}`;
         }
-        trigger.addEventListener('click', () => {
+        trigger?.addEventListener('click', () => {
             studentId = userForm.dataset.userId; if (!studentId) return;
             const name = ['last_name', 'first_name', 'middle_name'].map(n => userForm.elements[n].value).filter(Boolean).join(' ');
             qsa('[data-sales-student]').forEach(el => { el.textContent = name; });
@@ -2196,8 +2210,10 @@
             form.action = path(`education/students/${studentId}/sales`); renderSales(); openDialog(salesDialog);
         });
         // The action is meaningful only for an existing student.
-        const syncTrigger = () => { trigger.hidden = userForm.dataset.mode !== 'edit'; };
-        new MutationObserver(syncTrigger).observe(userForm, { attributes: true, attributeFilter: ['data-mode'] }); syncTrigger();
+        if (trigger && userForm) {
+            const syncTrigger = () => { trigger.hidden = userForm.dataset.mode !== 'edit'; };
+            new MutationObserver(syncTrigger).observe(userForm, { attributes: true, attributeFilter: ['data-mode'] }); syncTrigger();
+        }
         qs('[data-sales-close]').addEventListener('click', () => closeDialog(salesDialog));
         qs('[data-wizard-close]').addEventListener('click', () => closeDialog(wizard));
         function renderServices() {
@@ -2220,6 +2236,12 @@
             if (step === 4) { const review = qs('[data-sale-review]', form); review.replaceChildren(); [`Услуга: ${selected.name}`, `Дата продажи: ${form.elements.sold_on.value}`, `Стоимость: ${money(qs('[data-sale-amount]', form).value)}`, 'После завершения продажи можно принять оплату в карточке курсанта.'].forEach(t => { const p = document.createElement('div'); p.textContent = t; review.append(p); }); }
         }
         qs('[data-sale-start]').addEventListener('click', () => { form.reset(); selected = null; installments = []; step = 0; const contractSelect = qs('[data-sale-contract]', form); contractSelect.replaceChildren(); const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Выберите договор'; contractSelect.append(placeholder); (data.contracts[studentId] || []).filter(contract => contract.status === 'active').forEach(contract => { const option = document.createElement('option'); option.value = contract.id; option.textContent = `№ ${contract.contract_number}`; contractSelect.append(option); }); if (contractSelect.options.length === 2) contractSelect.selectedIndex = 1; renderServices(); renderInstallments(); renderStep(); openDialog(wizard); });
+        qsa('[data-sale-direct]').forEach(button => button.addEventListener('click', () => {
+            studentId = button.dataset.studentId;
+            qsa('[data-sales-student]').forEach(el => { el.textContent = button.dataset.studentName; });
+            form.action = path(`education/students/${studentId}/sales`);
+            qs('[data-sale-start]').click();
+        }));
         qs('.sale-search', form).addEventListener('input', renderServices);
         qs('[data-sale-back]', form).addEventListener('click', () => { if (step > 0) { step--; renderStep(); } });
         qs('[data-sale-next]', form).addEventListener('click', () => {
