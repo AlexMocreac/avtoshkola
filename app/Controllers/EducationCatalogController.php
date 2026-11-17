@@ -150,11 +150,20 @@ final class EducationCatalogController
     public function checkpoints(): void
     {
         $user = Auth::requireEducationManager();
+        $folders = EducationCatalog::checkpointFolders();
+        if (!$folders) {
+            EducationCatalog::saveCheckpointFolder('Общие контрольные точки', null, $user->id);
+            $folders = EducationCatalog::checkpointFolders();
+        }
+        $selectedFolderId = (int) ($_GET['folder_id'] ?? ($folders[0]['id'] ?? 0));
+        if (!array_filter($folders, static fn (array $folder): bool => (int) $folder['id'] === $selectedFolderId)) $selectedFolderId = (int) ($folders[0]['id'] ?? 0);
         View::render('education/checkpoints/index', [
             'pageTitle' => 'Контрольные точки обучения',
             'pageEyebrow' => 'Справочники обучения',
             'currentUser' => $user,
             'checkpoints' => EducationCatalog::checkpoints(),
+            'folders' => $folders,
+            'selectedFolderId' => $selectedFolderId,
         ]);
     }
 
@@ -173,7 +182,7 @@ final class EducationCatalogController
         } catch (RuntimeException $exception) {
             Flash::set('error', $exception->getMessage());
         }
-        Response::redirect('/education/checkpoints');
+        Response::redirect('/education/checkpoints?folder_id=' . (int) ($_POST['folder_id'] ?? 0));
     }
 
     public function updateCheckpoint(string $id): void
@@ -191,7 +200,7 @@ final class EducationCatalogController
         } catch (RuntimeException $exception) {
             Flash::set('error', $exception->getMessage());
         }
-        Response::redirect('/education/checkpoints');
+        Response::redirect('/education/checkpoints?folder_id=' . (int) ($_POST['folder_id'] ?? 0));
     }
 
     public function balanceTypes(): void
@@ -209,6 +218,49 @@ final class EducationCatalogController
             'selectedFolderId' => $selectedFolderId,
             'units' => EducationCatalog::BALANCE_UNITS,
         ]);
+    }
+
+    public function createCheckpointFolder(): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        try {
+            $parentId = (int) ($_POST['parent_id'] ?? 0);
+            $id = EducationCatalog::saveCheckpointFolder((string) ($_POST['name'] ?? ''), $parentId ?: null, $user->id);
+            Flash::set('success', 'Папка добавлена.');
+            Response::redirect('/education/checkpoints?folder_id=' . $id);
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/checkpoints');
+    }
+
+    public function moveCheckpointFolder(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        try {
+            $parentId = (int) ($_POST['parent_id'] ?? 0);
+            EducationCatalog::moveCheckpointFolder((int) $id, $parentId ?: null, $user->id);
+            Flash::set('success', 'Папка перемещена.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/checkpoints?folder_id=' . (int) $id);
+    }
+
+    public function moveCheckpoint(string $id): void
+    {
+        $user = Auth::requireEducationManager();
+        Csrf::enforce();
+        $folderId = (int) ($_POST['folder_id'] ?? 0);
+        try {
+            EducationCatalog::moveCheckpoint((int) $id, $folderId, $user->id);
+            Flash::set('success', 'Контрольная точка перемещена.');
+        } catch (RuntimeException $exception) {
+            Flash::set('error', $exception->getMessage());
+        }
+        Response::redirect('/education/checkpoints?folder_id=' . $folderId);
     }
 
     public function createBalanceFolder(): void

@@ -103,6 +103,9 @@ $router->post('/education/programs/{id}/update', [EducationCatalogController::cl
 $router->get('/education/checkpoints', [EducationCatalogController::class, 'checkpoints']);
 $router->post('/education/checkpoints', [EducationCatalogController::class, 'createCheckpoint']);
 $router->post('/education/checkpoints/{id}/update', [EducationCatalogController::class, 'updateCheckpoint']);
+$router->post('/education/checkpoint-folders', [EducationCatalogController::class, 'createCheckpointFolder']);
+$router->post('/education/checkpoint-folders/{id}/move', [EducationCatalogController::class, 'moveCheckpointFolder']);
+$router->post('/education/checkpoints/{id}/move', [EducationCatalogController::class, 'moveCheckpoint']);
 $router->post('/education/balance-folders', [EducationCatalogController::class, 'createBalanceFolder']);
 $router->post('/education/balance-folders/{id}/move', [EducationCatalogController::class, 'moveBalanceFolder']);
 $router->get('/education/balance-types', [EducationCatalogController::class, 'balanceTypes']);

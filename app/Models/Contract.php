@@ -48,11 +48,13 @@ final class Contract
                     l.company_name AS lead_company_name, l.phone AS lead_phone,
                     CONCAT_WS(" ", l.last_name, l.first_name, l.middle_name) AS lead_name,
                     CONCAT_WS(" ", manager.last_name, manager.first_name) AS manager_name,
-                    CONCAT_WS(" ", student.last_name, student.first_name, student.middle_name) AS student_name
+                    CONCAT_WS(" ", student.last_name, student.first_name, student.middle_name) AS student_name,
+                    profile.photo_path AS student_photo_path
              FROM crm_contracts c
              LEFT JOIN crm_leads l ON l.id = c.lead_id
              LEFT JOIN users manager ON manager.id = l.assigned_to
              LEFT JOIN users student ON student.id = c.student_id
+             LEFT JOIN student_profiles profile ON profile.student_id = student.id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY c.signed_on DESC, c.id DESC'
         );

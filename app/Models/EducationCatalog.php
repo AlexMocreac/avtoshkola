@@ -268,7 +268,10 @@ final class EducationCatalog
         if (mb_strlen($name) < 2 || mb_strlen($name) > 190 || $code === '' || mb_strlen($code) > 24) {
             throw new RuntimeException('Укажите название и короткий код контрольной точки.');
         }
+        $folderId = (int) ($data['folder_id'] ?? ($id ? (self::findCheckpoint($id)['folder_id'] ?? 0) : (self::checkpointFolders()[0]['id'] ?? 0)));
+        if (!$folderId || !self::findCheckpointFolder($folderId)) throw new RuntimeException('Выберите доступную папку.');
         $payload = [
+            'folder_id' => $folderId,
             'name' => $name,
             'code' => $code,
             'sort_order' => (int) ($data['sort_order'] ?? 0),
@@ -277,15 +280,15 @@ final class EducationCatalog
         ];
         if ($id) {
             $stmt = Database::connection()->prepare(
-                'UPDATE learning_checkpoints SET name = :name, code = :code, sort_order = :sort_order,
+                'UPDATE learning_checkpoints SET folder_id = :folder_id, name = :name, code = :code, sort_order = :sort_order,
                  status = :status, updated_by = :updated_by WHERE id = :id'
             );
             $stmt->execute($payload + ['id' => $id]);
             return $id;
         }
         $stmt = Database::connection()->prepare(
-            'INSERT INTO learning_checkpoints (name, code, sort_order, status, created_by, updated_by)
-             VALUES (:name, :code, :sort_order, :status, :created_by, :updated_by)'
+            'INSERT INTO learning_checkpoints (folder_id, name, code, sort_order, status, created_by, updated_by)
+             VALUES (:folder_id, :name, :code, :sort_order, :status, :created_by, :updated_by)'
         );
         $stmt->execute($payload + ['created_by' => $userId]);
         return (int) Database::connection()->lastInsertId();
@@ -327,6 +330,73 @@ final class EducationCatalog
             'completed_at' => $completed ? date('Y-m-d H:i:s') : null,
             'updated_by' => $userId,
         ]);
+    }
+
+    public static function checkpointFolders(): array
+    {
+        $rows = Database::connection()->query('SELECT f.*, (SELECT COUNT(*) FROM learning_checkpoints t WHERE t.folder_id = f.id) AS item_count FROM learning_checkpoint_folders f ORDER BY f.name, f.id')->fetchAll();
+        $children = [];
+        foreach ($rows as $row) $children[(int) ($row['parent_id'] ?? 0)][] = $row;
+        $ordered = [];
+        $append = static function (int $parent, int $depth) use (&$append, &$ordered, $children): void {
+            foreach ($children[$parent] ?? [] as $row) {
+                $row['depth'] = $depth;
+                $ordered[] = $row;
+                $append((int) $row['id'], $depth + 1);
+            }
+        };
+        $append(0, 0);
+        return $ordered;
+    }
+
+    public static function saveCheckpointFolder(string $name, ?int $parentId, int $userId): int
+    {
+        $name = trim($name);
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 120) throw new RuntimeException('Название папки должно содержать от 2 до 120 символов.');
+        if ($parentId && !self::findCheckpointFolder($parentId)) throw new RuntimeException('Выберите доступную родительскую папку.');
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('INSERT INTO learning_checkpoint_folders (name, parent_id, created_by, updated_by) VALUES (:name, :parent_id, :created_by, :updated_by)');
+        $stmt->execute(['name' => $name, 'parent_id' => $parentId, 'created_by' => $userId, 'updated_by' => $userId]);
+        return (int) $pdo->lastInsertId();
+    }
+
+    public static function findCheckpointFolder(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare('SELECT * FROM learning_checkpoint_folders WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public static function moveCheckpointFolder(int $id, ?int $parentId, int $userId): void
+    {
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
+        try {
+            $rows = $pdo->query('SELECT id, parent_id FROM learning_checkpoint_folders FOR UPDATE')->fetchAll();
+            $folders = [];
+            foreach ($rows as $row) $folders[(int) $row['id']] = $row;
+            if (!isset($folders[$id])) throw new RuntimeException('Папка не найдена.');
+            if ($parentId !== null && !isset($folders[$parentId])) throw new RuntimeException('Выберите доступную папку.');
+            $seen = [];
+            for ($cursor = $parentId; $cursor !== null; $cursor = isset($folders[$cursor]['parent_id']) ? (int) $folders[$cursor]['parent_id'] : null) {
+                if ($cursor === $id || isset($seen[$cursor])) throw new RuntimeException('Нельзя переместить папку в неё саму или её вложенную папку.');
+                $seen[$cursor] = true;
+            }
+            $stmt = $pdo->prepare('UPDATE learning_checkpoint_folders SET parent_id = :parent_id, updated_by = :updated_by WHERE id = :id');
+            $stmt->execute(['parent_id' => $parentId, 'updated_by' => $userId, 'id' => $id]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    public static function moveCheckpoint(int $id, int $folderId, int $userId): void
+    {
+        if (!self::findCheckpoint($id)) throw new RuntimeException('Контрольная точка не найдена.');
+        if (!self::findCheckpointFolder($folderId)) throw new RuntimeException('Выберите доступную папку.');
+        $stmt = Database::connection()->prepare('UPDATE learning_checkpoints SET folder_id = :folder_id, updated_by = :updated_by WHERE id = :id');
+        $stmt->execute(['folder_id' => $folderId, 'updated_by' => $userId, 'id' => $id]);
     }
 
     public static function balanceFolders(): array
