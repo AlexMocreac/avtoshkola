@@ -88,6 +88,9 @@ img, svg { display: block; }
 .avatar--dark { color: #fff; background: linear-gradient(135deg, #5c77df, #2f49b0); }
 .avatar--soft { color: #304aa8; background: linear-gradient(135deg, #f1f4ff, #dfe6ff); }
 .avatar--sm { width: 36px; height: 36px; flex-basis: 36px; border-radius: 11px; font-size: 0.875rem; }
+.avatar--photo { overflow: hidden; }
+.avatar--photo img { width: 100%; height: 100%; object-fit: cover; }
+.avatar--photo [hidden] { display: none; }
 
 /* App shell */
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); transition: grid-template-columns var(--transition); }
